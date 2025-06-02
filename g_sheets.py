@@ -3,68 +3,95 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import datetime
 from enum import Enum
+import json # חשוב לייבוא json
+import os   # חשוב לייבוא os
+import logging # הוספת לוגינג למודול הזה
 
 import config # ייבוא קובץ ההגדרות
 
+logger = logging.getLogger(__name__) # הגדרת לוגר ספציפי למודול זה
+
 # הגדרת עמודות (ודא שהן תואמות למה שיש לך בגיליון)
 COL_USER_ID = 'telegram_user_id'
-COL_USERNAME = 'telegram_username' # חדש, מומלץ להוסיף
+COL_USERNAME = 'telegram_username'
 COL_EMAIL = 'email'
 COL_DISCLAIMER_SENT_TIME = 'disclaimer_sent_time'
-COL_CONFIRMATION_STATUS = 'confirmation_status' # (pending_disclaimer, confirmed_disclaimer, warned_no_disclaimer, trial_pending_payment, trial_active, paid_subscriber, cancelled, expired)
+COL_CONFIRMATION_STATUS = 'confirmation_status'
 COL_TRIAL_START_DATE = 'trial_start_date'
 COL_TRIAL_END_DATE = 'trial_end_date'
-COL_PAYMENT_STATUS = 'payment_status' # (pending, trial, paid, expired, cancelled_by_user)
+COL_PAYMENT_STATUS = 'payment_status'
 COL_GUMROAD_SALE_ID = 'gumroad_sale_id'
-COL_GUMROAD_SUBSCRIPTION_ID = 'gumroad_subscription_id' # אם גאמרוד מחזירים מזהה מנוי
+COL_GUMROAD_SUBSCRIPTION_ID = 'gumroad_subscription_id'
 COL_LAST_UPDATE = 'last_update_timestamp'
 
-# ערכים אפשריים לסטטוס אישור
 class ConfirmationStatus(Enum):
     PENDING_DISCLAIMER = "pending_disclaimer"
     CONFIRMED_DISCLAIMER = "confirmed_disclaimer"
     WARNED_NO_DISCLAIMER = "warned_no_disclaimer_approval"
     CANCELLED_NO_DISCLAIMER = "cancelled_no_disclaimer_approval"
 
-# ערכים אפשריים לסטטוס תשלום/מנוי
 class PaymentStatus(Enum):
     TRIAL = "trial"
     PENDING_PAYMENT_AFTER_TRIAL = "pending_payment_after_trial"
     PAID_SUBSCRIBER = "paid_subscriber"
     EXPIRED_NO_PAYMENT = "expired_no_payment"
-    CANCELLED_BY_USER = "cancelled_by_user" # אם גאמרוד שולחים אירוע כזה
+    CANCELLED_BY_USER = "cancelled_by_user"
 
-# --- התחברות ל-Google Sheets ---
 def get_sheet():
     """מתחבר ל-Google Sheet ומחזיר אובייקט של הגיליון."""
     try:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        # כאן נשתמש בתוכן הקובץ אם הוא מועבר כמשתנה סביבה, או בנתיב אם הקובץ קיים בשרת
-        if config.GSHEET_SERVICE_ACCOUNT_FILE.endswith('.json'):
-             creds = ServiceAccountCredentials.from_json_keyfile_name(config.GSHEET_SERVICE_ACCOUNT_FILE, scope)
-        else: # נניח שהתוכן של ה-JSON נמצא במשתנה הסביבה
-            import json
-            creds_json = json.loads(config.GSHEET_SERVICE_ACCOUNT_FILE)
+        
+        # קודם כל, נסה לקרוא את תוכן ה-JSON ממשתנה הסביבה שהגדרנו במיוחד עבור זה
+        # ב-Render נגדיר את GSHEET_SERVICE_ACCOUNT_JSON_CONTENT
+        gsa_json_content_str = os.environ.get('GSHEET_SERVICE_ACCOUNT_JSON_CONTENT')
+        
+        if gsa_json_content_str:
+            logger.info("Attempting to use GSHEET_SERVICE_ACCOUNT_JSON_CONTENT from environment variable.")
+            creds_json = json.loads(gsa_json_content_str)
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_json, scope)
+        elif config.GSHEET_SERVICE_ACCOUNT_FILE and os.path.exists(config.GSHEET_SERVICE_ACCOUNT_FILE):
+            # אם משתנה הסביבה לא קיים, אבל משתנה הקונפיג כן מצביע על קובץ קיים (לפיתוח מקומי)
+            logger.info(f"GSHEET_SERVICE_ACCOUNT_JSON_CONTENT not found, attempting to use GSHEET_SERVICE_ACCOUNT_FILE: {config.GSHEET_SERVICE_ACCOUNT_FILE}")
+            creds = ServiceAccountCredentials.from_json_keyfile_name(config.GSHEET_SERVICE_ACCOUNT_FILE, scope)
+        else:
+            logger.error("Google Sheets credentials not found. "
+                           "Please set GSHEET_SERVICE_ACCOUNT_JSON_CONTENT env var in Render "
+                           "or a valid GSHEET_SERVICE_ACCOUNT_FILE path in config.py for local development.")
+            return None
 
         client = gspread.authorize(creds)
         spreadsheet = client.open_by_key(config.GSHEET_SPREADSHEET_ID)
         sheet = spreadsheet.worksheet(config.GSHEET_SHEET_NAME)
+        logger.info("Successfully connected to Google Sheet.")
         return sheet
+    except FileNotFoundError as e_fnf:
+        logger.error(f"Google Sheets credentials file (local fallback) not found: {e_fnf}")
+        return None
+    except json.JSONDecodeError as e_json:
+        logger.error(f"Error decoding Google Sheets credentials JSON from environment variable: {e_json}")
+        return None
     except Exception as e:
-        print(f"Error connecting to Google Sheets: {e}")
+        logger.error(f"An unexpected error occurred while connecting to Google Sheets: {e}", exc_info=True)
         return None
 
-# --- פונקציות לניהול משתמשים ---
+# --- (שאר הפונקציות בקובץ g_sheets.py נשארות כפי שהיו בגרסה שסיפקתי קודם) ---
+# --- כלומר, find_user_row, get_user_data, add_new_user_for_disclaimer, וכו' ---
+
 def find_user_row(sheet, user_id):
     """מוצא שורה של משתמש לפי user_id. מחזיר את מספר השורה או None."""
+    if not sheet: return None
     try:
-        cell = sheet.find(str(user_id), in_column=sheet.find(COL_USER_ID).col) # מצא את עמודת user_id
+        user_id_col_index = gspread.utils.find_richtext_value_in_row(sheet.row_values(1), COL_USER_ID) + 1
+        if user_id_col_index == 0: # find_richtext_value_in_row returns -1 if not found
+            logger.error(f"Column '{COL_USER_ID}' not found in sheet header.")
+            return None
+        cell = sheet.find(str(user_id), in_column=user_id_col_index)
         return cell.row
     except gspread.exceptions.CellNotFound:
         return None
     except Exception as e:
-        print(f"Error finding user {user_id}: {e}")
+        logger.error(f"Error finding user {user_id}: {e}")
         return None
 
 def get_user_data(user_id):
@@ -73,26 +100,51 @@ def get_user_data(user_id):
     if not sheet: return None
     row_num = find_user_row(sheet, user_id)
     if row_num:
-        user_record_values = sheet.row_values(row_num)
-        headers = sheet.row_values(1) # קבלת כותרות העמודות
-        return dict(zip(headers, user_record_values))
+        try:
+            user_record_values = sheet.row_values(row_num)
+            headers = sheet.row_values(1) 
+            return dict(zip(headers, user_record_values))
+        except Exception as e:
+            logger.error(f"Error fetching row values for user {user_id} at row {row_num}: {e}")
+            return None
     return None
 
 def add_new_user_for_disclaimer(user_id, username):
-    """מוסיף משתמש חדש שממתין לאישור התנאים."""
     sheet = get_sheet()
     if not sheet: return False
-    if find_user_row(sheet, user_id): # בדוק אם המשתמש כבר קיים
-        print(f"User {user_id} already exists. Updating disclaimer sent time.")
-        return update_user_disclaimer_status(user_id, ConfirmationStatus.PENDING_DISCLAIMER.value, datetime.datetime.now().isoformat())
+    
+    # בדוק אם הגיליון ריק והוסף כותרות אם צריך
+    headers_exist = False
+    try:
+        if sheet.row_count > 0 and sheet.row_values(1):
+            headers_exist = True
+    except Exception as e:
+        logger.warning(f"Could not check existing headers, assuming they don't exist: {e}")
+
+    expected_headers = [
+        COL_USER_ID, COL_USERNAME, COL_EMAIL, COL_DISCLAIMER_SENT_TIME,
+        COL_CONFIRMATION_STATUS, COL_TRIAL_START_DATE, COL_TRIAL_END_DATE,
+        COL_PAYMENT_STATUS, COL_GUMROAD_SALE_ID, COL_GUMROAD_SUBSCRIPTION_ID,
+        COL_LAST_UPDATE
+    ]
+
+    if not headers_exist:
+        try:
+            sheet.append_row(expected_headers)
+            logger.info("Appended headers to empty sheet.")
+        except Exception as e:
+            logger.error(f"Failed to append headers to empty sheet: {e}")
+            return False
+
+    if find_user_row(sheet, user_id):
+        logger.info(f"User {user_id} already exists. Updating disclaimer sent time.")
+        return update_user_disclaimer_status(user_id, ConfirmationStatus.PENDING_DISCLAIMER, datetime.datetime.now().isoformat())
 
     now_iso = datetime.datetime.now().isoformat()
-    # ודא שהכותרות קיימות בגיליון שלך
-    # סדר הכנסת הנתונים חייב להתאים לסדר העמודות או שתשתמש בשמות עמודות
-    new_row_data = {
+    new_row_data_dict = {
         COL_USER_ID: str(user_id),
         COL_USERNAME: username,
-        COL_EMAIL: '', # יתעדכן מאוחר יותר
+        COL_EMAIL: '',
         COL_DISCLAIMER_SENT_TIME: now_iso,
         COL_CONFIRMATION_STATUS: ConfirmationStatus.PENDING_DISCLAIMER.value,
         COL_TRIAL_START_DATE: '',
@@ -102,230 +154,163 @@ def add_new_user_for_disclaimer(user_id, username):
         COL_GUMROAD_SUBSCRIPTION_ID: '',
         COL_LAST_UPDATE: now_iso
     }
-    # אם הגיליון ריק לגמרי, הוסף כותרות
-    if sheet.row_count == 0:
-        sheet.append_row(list(new_row_data.keys()))
-        sheet.append_row(list(new_row_data.values()))
-    else:
-        # התאם את סדר הערכים לסדר העמודות שלך בפועל אם אתה משתמש ב-append_row
-        # עדיף להשתמש ב-update עם cell_list אם הסדר לא מובטח
-        # או לוודא שהכותרות כבר קיימות ומסודרות נכון.
-        # לצורך פשטות כאן, נניח שאתה דואג לסדר העמודות בגיליון שיתאים ל-keys של new_row_data
-        try:
-            sheet.append_row([new_row_data.get(col_name, '') for col_name in sheet.row_values(1)])
-        except Exception as e: # אם יש בעיה בהתאמת עמודות
-             print(f"Error appending row, ensure columns match dictionary keys or handle column mapping: {e}")
-             return False
-    return True
+    # סדר את הנתונים לפי סדר הכותרות הצפוי
+    current_headers = sheet.row_values(1) if sheet.row_count > 0 else expected_headers
+    new_row_values = [new_row_data_dict.get(header, '') for header in current_headers]
+
+    try:
+        sheet.append_row(new_row_values)
+        logger.info(f"Added new user {user_id} ({username}) for disclaimer.")
+        return True
+    except Exception as e:
+        logger.error(f"Error appending new user row for {user_id}: {e}")
+        return False
 
 
-def update_user_email_and_confirmation(user_id, email, confirmation_status_enum: ConfirmationStatus):
-    """מעדכן אימייל וסטטוס אישור תנאים."""
-    sheet = get_sheet()
-    if not sheet: return False
-    row_num = find_user_row(sheet, user_id)
-    if not row_num: return False
-
-    updates = {
-        COL_EMAIL: email,
-        COL_CONFIRMATION_STATUS: confirmation_status_enum.value,
-        COL_LAST_UPDATE: datetime.datetime.now().isoformat()
-    }
-    for col_name, value in updates.items():
-        try:
-            col_num = sheet.find(col_name).col
-            sheet.update_cell(row_num, col_num, value)
-        except gspread.exceptions.CellNotFound:
-            print(f"Column {col_name} not found in sheet.")
-        except Exception as e:
-            print(f"Error updating cell for user {user_id}, column {col_name}: {e}")
-            return False
-    return True
-
-def start_user_trial(user_id):
-    """מתחיל תקופת ניסיון למשתמש שאישר תנאים."""
-    sheet = get_sheet()
-    if not sheet: return False
-    row_num = find_user_row(sheet, user_id)
-    if not row_num: return False
-
-    now = datetime.datetime.now()
-    trial_start_date_iso = now.isoformat()
-    trial_end_date_iso = (now + datetime.timedelta(days=config.TRIAL_PERIOD_DAYS)).isoformat()
-
-    updates = {
-        COL_TRIAL_START_DATE: trial_start_date_iso,
-        COL_TRIAL_END_DATE: trial_end_date_iso,
-        COL_PAYMENT_STATUS: PaymentStatus.TRIAL.value,
-        COL_LAST_UPDATE: now.isoformat()
-    }
-    for col_name, value in updates.items():
-        try:
-            col_num = sheet.find(col_name).col
-            sheet.update_cell(row_num, col_num, value)
-        except gspread.exceptions.CellNotFound:
-            print(f"Column {col_name} not found in sheet.")
-        except Exception as e:
-            print(f"Error updating cell for user {user_id}, column {col_name}: {e}")
-            return False
-    return True
-
-
-def update_user_disclaimer_status(user_id, status_enum: ConfirmationStatus, disclaimer_sent_time_iso=None):
-    """מעדכן סטטוס אישור תנאים וזמן שליחת ההודעה."""
+def update_user_data(user_id, updates: dict):
+    """מעדכן שדות ספציפיים עבור משתמש. הפונקציה המרכזית לעדכונים."""
     sheet = get_sheet()
     if not sheet: return False
     row_num = find_user_row(sheet, user_id)
     if not row_num:
-        print(f"Cannot update disclaimer status, user {user_id} not found.")
+        logger.warning(f"Cannot update data, user {user_id} not found in GSheet.")
         return False
 
-    updates = {
-        COL_CONFIRMATION_STATUS: status_enum.value,
-        COL_LAST_UPDATE: datetime.datetime.now().isoformat()
-    }
-    if disclaimer_sent_time_iso:
-        updates[COL_DISCLAIMER_SENT_TIME] = disclaimer_sent_time_iso
+    updates[COL_LAST_UPDATE] = datetime.datetime.now().isoformat()
+    
+    cells_to_update = []
+    headers = sheet.row_values(1) # קבל כותרות כדי למצוא אינדקס עמודה
 
     for col_name, value in updates.items():
         try:
-            col_num = sheet.find(col_name).col
-            sheet.update_cell(row_num, col_num, value)
-        except gspread.exceptions.CellNotFound:
-            print(f"Column {col_name} not found in sheet.")
-        except Exception as e:
-            print(f"Error updating cell for user {user_id}, column {col_name}: {e}")
+            # מצא את אינדקס העמודה (מבוסס 1)
+            col_index = headers.index(col_name) + 1 
+            cells_to_update.append(gspread.Cell(row_num, col_index, str(value)))
+        except ValueError:
+            logger.error(f"Column '{col_name}' not found in sheet header. Cannot update value: {value}")
+        except Exception as e_cell:
+            logger.error(f"Error preparing cell update for user {user_id}, column {col_name}: {e_cell}")
             return False
-    return True
+            
+    if cells_to_update:
+        try:
+            sheet.update_cells(cells_to_update, value_input_option='USER_ENTERED')
+            logger.info(f"Successfully updated data for user {user_id}: {updates.keys()}")
+            return True
+        except Exception as e_update:
+            logger.error(f"Error bulk updating cells for user {user_id}: {e_update}")
+            return False
+    return False # אם לא היו עדכונים בפועל
+
+def update_user_email_and_confirmation(user_id, email, confirmation_status_enum: ConfirmationStatus):
+    updates = {
+        COL_EMAIL: email,
+        COL_CONFIRMATION_STATUS: confirmation_status_enum.value
+    }
+    return update_user_data(user_id, updates)
+
+def start_user_trial(user_id):
+    now = datetime.datetime.now()
+    trial_start_date_iso = now.isoformat()
+    trial_end_date_iso = (now + datetime.timedelta(days=config.TRIAL_PERIOD_DAYS)).isoformat()
+    updates = {
+        COL_TRIAL_START_DATE: trial_start_date_iso,
+        COL_TRIAL_END_DATE: trial_end_date_iso,
+        COL_PAYMENT_STATUS: PaymentStatus.TRIAL.value
+    }
+    return update_user_data(user_id, updates)
+
+def update_user_disclaimer_status(user_id, status_enum: ConfirmationStatus, disclaimer_sent_time_iso=None):
+    updates = {COL_CONFIRMATION_STATUS: status_enum.value}
+    if disclaimer_sent_time_iso:
+        updates[COL_DISCLAIMER_SENT_TIME] = disclaimer_sent_time_iso
+    return update_user_data(user_id, updates)
 
 def update_user_payment_status_from_gumroad(email, gumroad_sale_id, gumroad_subscription_id=None):
-    """מעדכן סטטוס תשלום לאחר קבלת Webhook מ-Gumroad."""
     sheet = get_sheet()
-    if not sheet: return False
+    if not sheet: return None # מחזיר None במקום False כדי שנוכל להבדיל
 
     try:
-        # מצא את המשתמש לפי האימייל
-        email_col_header = COL_EMAIL
-        email_col_num = sheet.find(email_col_header).col
-        cell = sheet.find(email, in_column=email_col_num)
+        headers = sheet.row_values(1)
+        email_col_index = headers.index(COL_EMAIL) + 1
+        cell = sheet.find(email, in_column=email_col_index)
         row_num = cell.row
-    except gspread.exceptions.CellNotFound:
-        print(f"User with email {email} not found for Gumroad sale {gumroad_sale_id}.")
-        # כאן אפשר לשקול ליצור משתמש חדש אם רוצים, או פשוט להתעלם אם האימייל לא קיים
-        return False
+        user_id_col_index = headers.index(COL_USER_ID) + 1
+        telegram_user_id = sheet.cell(row_num, user_id_col_index).value
+    except (gspread.exceptions.CellNotFound, ValueError):
+        logger.warning(f"User with email {email} not found for Gumroad sale {gumroad_sale_id}.")
+        return None
     except Exception as e:
-        print(f"Error finding user by email {email}: {e}")
-        return False
+        logger.error(f"Error finding user by email {email}: {e}")
+        return None
 
     updates = {
         COL_PAYMENT_STATUS: PaymentStatus.PAID_SUBSCRIBER.value,
         COL_GUMROAD_SALE_ID: str(gumroad_sale_id),
-        COL_CONFIRMATION_STATUS: ConfirmationStatus.CONFIRMED_DISCLAIMER.value, # אם שילם, הוא בהכרח מאושר
-        COL_LAST_UPDATE: datetime.datetime.now().isoformat()
+        COL_CONFIRMATION_STATUS: ConfirmationStatus.CONFIRMED_DISCLAIMER.value,
     }
     if gumroad_subscription_id:
         updates[COL_GUMROAD_SUBSCRIPTION_ID] = str(gumroad_subscription_id)
-    # אם המשתמש שילם, נאפס את תאריכי הניסיון (אם היו) או שנקבע לו מועד תפוגת מנוי חדש
-    # זה תלוי אם גאמרוד שולחים תאריך תפוגה למנוי
-    # לצורך הפשטות, רק נעדכן שהוא שילם. ניהול תפוגת מנוי הוא שלב מתקדם יותר.
-    # updates[COL_TRIAL_START_DATE] = ''
-    # updates[COL_TRIAL_END_DATE] = ''
-
-
-    for col_name, value in updates.items():
-        try:
-            col_num = sheet.find(col_name).col
-            sheet.update_cell(row_num, col_num, value)
-        except gspread.exceptions.CellNotFound:
-            print(f"Column {col_name} not found in sheet.")
-        except Exception as e:
-            print(f"Error updating cell for user by email {email}, column {col_name}: {e}")
-            return False
-    print(f"User {email} payment status updated from Gumroad sale {gumroad_sale_id}.")
-    # החזר את ה-user_id של טלגרם אם הוא קיים, כדי שהבוט יוכל לשלוח לו הודעת אישור תשלום
-    user_id_col_num = sheet.find(COL_USER_ID).col
-    telegram_user_id = sheet.cell(row_num, user_id_col_num).value
-    return telegram_user_id
+    
+    if update_user_data(int(telegram_user_id), updates): # המר את ה-ID למספר
+        logger.info(f"User {email} (TG ID: {telegram_user_id}) payment status updated from Gumroad sale {gumroad_sale_id}.")
+        return telegram_user_id # החזר את ה-ID של טלגרם
+    return None
 
 
 def get_users_for_disclaimer_warning():
-    """מחזיר משתמשים שצריך לשלוח להם אזהרה על אי אישור תנאים."""
     sheet = get_sheet()
     if not sheet: return []
     users_to_warn = []
-    all_users = sheet.get_all_records() # קל יותר לעבוד עם רשומות כמילונים
-    for user_data in all_users:
-        if user_data.get(COL_CONFIRMATION_STATUS) == ConfirmationStatus.PENDING_DISCLAIMER.value:
-            disclaimer_sent_time_str = user_data.get(COL_DISCLAIMER_SENT_TIME)
-            if disclaimer_sent_time_str:
-                disclaimer_sent_time = datetime.datetime.fromisoformat(disclaimer_sent_time_str)
-                if datetime.datetime.now() > disclaimer_sent_time + datetime.timedelta(hours=config.REMINDER_MESSAGE_HOURS_BEFORE_WARNING):
-                    users_to_warn.append(user_data)
-    return users_to_warn
+    try:
+        all_users = sheet.get_all_records()
+        for user_data_dict in all_users:
+            if user_data_dict.get(COL_CONFIRMATION_STATUS) == ConfirmationStatus.PENDING_DISCLAIMER.value:
+                disclaimer_sent_time_str = user_data_dict.get(COL_DISCLAIMER_SENT_TIME)
+                if disclaimer_sent_time_str:
+                    try:
+                        disclaimer_sent_time = datetime.datetime.fromisoformat(disclaimer_sent_time_str)
+                        if datetime.datetime.now() > disclaimer_sent_time + datetime.timedelta(hours=config.REMINDER_MESSAGE_HOURS_BEFORE_WARNING):
+                            users_to_warn.append(user_data_dict)
+                    except ValueError:
+                        logger.warning(f"Could not parse disclaimer_sent_time '{disclaimer_sent_time_str}' for user {user_data_dict.get(COL_USER_ID)}")
+        return users_to_warn
+    except Exception as e:
+        logger.error(f"Error in get_users_for_disclaimer_warning: {e}")
+        return []
 
 
 def get_users_for_trial_reminder_or_removal():
-    """מחזיר משתמשים שתקופת הניסיון שלהם הסתיימה או עומדת להסתיים ולא שילמו."""
     sheet = get_sheet()
     if not sheet: return []
     users_to_process = []
-    all_users = sheet.get_all_records()
     now = datetime.datetime.now()
+    try:
+        all_users = sheet.get_all_records()
+        for user_data_dict in all_users:
+            payment_status_val = user_data_dict.get(COL_PAYMENT_STATUS)
+            trial_end_date_str = user_data_dict.get(COL_TRIAL_END_DATE)
 
-    for user_data in all_users:
-        payment_status = user_data.get(COL_PAYMENT_STATUS)
-        trial_end_date_str = user_data.get(COL_TRIAL_END_DATE)
-
-        if payment_status == PaymentStatus.TRIAL.value and trial_end_date_str:
-            trial_end_date = datetime.datetime.fromisoformat(trial_end_date_str)
-            # אם הניסיון הסתיים או עומד להסתיים ב-24 שעות הקרובות (סתם דוגמה, אפשר לשנות)
-            if now >= trial_end_date - datetime.timedelta(days=1):
-                users_to_process.append({'action': 'send_trial_end_reminder', 'data': user_data})
-        elif payment_status == PaymentStatus.PENDING_PAYMENT_AFTER_TRIAL.value and trial_end_date_str:
-            # אם נשלחה כבר תזכורת, והוא עדיין לא שילם ועברו X ימים מאז סוף הניסיון
-            trial_end_date = datetime.datetime.fromisoformat(trial_end_date_str)
-            if now >= trial_end_date + datetime.timedelta(days=2): # יומיים אחרי סוף הניסיון, לדוגמה
-                 users_to_process.append({'action': 'remove_user_no_payment', 'data': user_data})
-    return users_to_process
-
-def update_user_status(user_id, updates: dict):
-    """מעדכן שדות ספציפיים עבור משתמש."""
-    sheet = get_sheet()
-    if not sheet: return False
-    row_num = find_user_row(sheet, user_id)
-    if not row_num:
-        print(f"Cannot update status, user {user_id} not found.")
-        return False
-
-    updates[COL_LAST_UPDATE] = datetime.datetime.now().isoformat() # תמיד עדכן זמן עדכון אחרון
-
-    for col_name, value in updates.items():
-        try:
-            col_num = sheet.find(col_name).col # מצא את מספר העמודה לפי הכותרת
-            sheet.update_cell(row_num, col_num, value)
-        except gspread.exceptions.CellNotFound:
-            print(f"Column {col_name} not found in sheet. Cannot update value: {value}")
-        except Exception as e:
-            print(f"Error updating cell for user {user_id}, column {col_name}: {e}")
-            return False
-    return True
+            if payment_status_val == PaymentStatus.TRIAL.value and trial_end_date_str:
+                try:
+                    trial_end_date = datetime.datetime.fromisoformat(trial_end_date_str)
+                    if now >= trial_end_date - datetime.timedelta(days=1): # אם הניסיון הסתיים או מסתיים היום
+                        users_to_process.append({'action': 'send_trial_end_reminder', 'data': user_data_dict})
+                except ValueError:
+                    logger.warning(f"Could not parse trial_end_date '{trial_end_date_str}' for user {user_data_dict.get(COL_USER_ID)}")
+            
+            elif payment_status_val == PaymentStatus.PENDING_PAYMENT_AFTER_TRIAL.value and trial_end_date_str:
+                try:
+                    trial_end_date = datetime.datetime.fromisoformat(trial_end_date_str)
+                    if now >= trial_end_date + datetime.timedelta(days=2): # יומיים אחרי סוף הניסיון המקורי
+                         users_to_process.append({'action': 'remove_user_no_payment', 'data': user_data_dict})
+                except ValueError:
+                     logger.warning(f"Could not parse trial_end_date '{trial_end_date_str}' for user {user_data_dict.get(COL_USER_ID)} in PENDING_PAYMENT_AFTER_TRIAL state.")
+        return users_to_process
+    except Exception as e:
+        logger.error(f"Error in get_users_for_trial_reminder_or_removal: {e}")
+        return []
 
 
-# דוגמה לשימוש (לא חלק מהמודול הסופי, רק לבדיקה)
-# if __name__ == '__main__':
-#     sheet = get_sheet()
-#     if sheet:
-#         print("Successfully connected to Google Sheet.")
-#         # הדפס כותרות
-#         # print(sheet.row_values(1))
-#         # add_new_user_for_disclaimer(12345, "testuser")
-#         # user = get_user_data(12345)
-#         # print(user)
-#         # update_user_email_and_confirmation(12345, "test@example.com", ConfirmationStatus.CONFIRMED_DISCLAIMER)
-#         # start_user_trial(12345)
-#         # user = get_user_data(12345)
-#         # print(user)
-#         # users_to_warn_list = get_users_for_disclaimer_warning()
-#         # print(f"Users to warn (disclaimer): {users_to_warn_list}")
-#         # users_for_trial_process = get_users_for_trial_reminder_or_removal()
-#         # print(f"Users for trial processing: {users_for_trial_process}")
+def update_user_status(user_id, updates: dict): # שם הפונקציה שונה ל-update_user_status (כבר קיים, לוודא שזה זה)
+    return update_user_data(user_id, updates)
