@@ -7,7 +7,7 @@ services:
     plan: free # השתמש בתוכנית החינמית (ודא שהיא זמינה לאזור ולסוג השירות)
     
     buildCommand: "pip install -r requirements.txt" # הפקודה לבניית התלויות
-    startCommand: "gunicorn bot:flask_app --workers 1 --threads 4 --bind 0.0.0.0:$PORT" # הפקודה להרצת האפליקציה
+    startCommand: "echo 'Current directory:' && pwd && echo 'Files in current directory:' && ls -la && echo 'Attempting to start Gunicorn...' && gunicorn bot:flask_app --workers 1 --threads 4 --bind 0.0.0.0:$PORT" # הפקודה להרצת האפליקציה
     # 'bot' הוא שם הקובץ bot.py (בלי הסיומת .py)
     # 'flask_app' הוא שם אובייקט ה-Flask שמוגדר ב-bot.py
     # $PORT הוא משתנה סביבה ש-Render מספק אוטומטית
