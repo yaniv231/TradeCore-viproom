@@ -1,0 +1,12 @@
+# requirements.txt
+
+python-telegram-bot[job-queue] >= 20.0, <22.0 # ספריית טלגרם, כולל תמיכה ב-JobQueue
+Flask >= 2.0, <4.0 # לשרת ה-Webhook
+gunicorn >= 20.0, <23.0 # שרת WSGI מומלץ לפרודקשן עם Flask (Render ישתמש בזה)
+APScheduler >= 3.9, <4.0 # לתזמון משימות ברקע
+gspread >= 5.0, <7.0 # לאינטגרציה עם Google Sheets
+oauth2client >= 4.0, <5.0 # לאימות עם Google APIs (נדרש ע"י gspread)
+yfinance >= 0.2, <0.3 # להורדת נתוני מניות
+mplfinance >= 0.12, <0.13 # ליצירת גרפים פיננסיים
+requests >= 2.0, <3.0 # ספריית HTTP (לעיתים נדרשת על ידי ספריות אחרות או לשימוש ישיר)
+python-dotenv >= 0.20, <2.0 # (אופציונלי) לטעינת משתני סביבה מקובץ .env בפיתוח מקומי
