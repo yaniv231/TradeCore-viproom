@@ -1,7 +1,7 @@
 # config.py
-
+import os # הוסף בראש הקובץ אם עדיין אין
 # === הגדרות טלגרם ===
-TELEGRAM_BOT_TOKEN = 7811056626:AAF7BgT637Ari9HN7jgyK8qBeNHTcQtXfR0 'הכנס_כאן_את_הטוקן_של_הבוט_שלך' # יוגדר כמשתנה סביבה ב-Render
+TELEGRAM_BOT_TOKEN = os.environ.get(7811056626:AAF7BgT637Ari9HN7jgyK8qBeNHTcQtXfR0) 'הכנס_כאן_את_הטוקן_של_הבוט_שלך' # יוגדר כמשתנה סביבה ב-Render
 ADMIN_USER_ID = 123456789  # החלף ב-ID שלך בטלגרם (לפקודות ניהול)
 CHANNEL_ID = -100591679360 # מזהה הערוץ הפרטי שלך (כפי שסיפקת)
 CHANNEL_USERNAME = "@TradeCoreVIP" # (אופציונלי) שם המשתמש של הערוץ אם יש, לשימוש בהודעות
