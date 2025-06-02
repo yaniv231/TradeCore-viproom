@@ -1,7 +1,9 @@
 # config.py
 import os # הוסף בראש הקובץ אם עדיין אין
 # === הגדרות טלגרם ===
-TELEGRAM_BOT_TOKEN = os.environ.get('7811056626:AAF7BgT637Ari9HN7jgyK8qBeNHTcQtXfR0', 'YOUR_FALLBACK_TOKEN_OR_EMPTY_STRING')
+TELEGRAM_BOT_TOKEN = os.environ.get(('7811056626:AAF7BgT637Ari9HN7jgyK8qBeNHTcQtXfR0')
+if not TELEGRAM_BOT_TOKEN:
+    raise ValueError("TELEGRAM_BOT_TOKEN environment variable not set!")
 
 ADMIN_USER_ID = 123456789  # החלף ב-ID שלך בטלגרם (לפקודות ניהול)
 CHANNEL_ID = -100591679360 # מזהה הערוץ הפרטי שלך (כפי שסיפקת)
