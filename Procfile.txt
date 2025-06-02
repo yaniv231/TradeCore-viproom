@@ -1,0 +1,1 @@
+web: sh -c "echo '--- DIAGNOSTICS START ---' && echo 'Current directory:' && pwd && echo 'Files in current directory:' && ls -la && echo '--- DIAGNOSTICS END ---' && echo 'Attempting to start Gunicorn...' && gunicorn bot:flask_app --workers 1 --threads 4 --bind 0.0.0.0:$PORT"
