@@ -32,9 +32,11 @@ GSHEET_SHEET_NAME = os.environ.get('GSHEET_SHEET_NAME', 'Sheet1')
 
 # === הגדרות Gumroad ===
 GUMROAD_PRODUCT_PERMALINK = os.environ.get('GUMROAD_PRODUCT_PERMALINK', 'https://ynlspire.gumroad.com/l/irexdq') # <<< שנה לקישור/מזהה המוצר שלך ב-Gumroad!
-if not GUMROAD_PRODUCT_PERMALINK or GUMROAD_PRODUCT_PERMALINK == https://ynlspire.gumroad.com/l/irexdq
-    logger.warning("GUMROAD_PRODUCT_PERMALINK is not properly set. Gumroad integration will be affected.")
-GUMROAD_WEBHOOK_SECRET = os.environ.get('GUMROAD_WEBHOOK_SECRET', '')
+if not GUMROAD_PRODUCT_PERMALINK:
+    logger.critical("CRITICAL: GUMROAD_PRODUCT_PERMALINK environment variable is not set in Render!")
+    # raise ValueError("CRITICAL: GUMROAD_PRODUCT_PERMALINK environment variable not set!")
+else:
+    logger.info(f"GUMROAD_PRODUCT_PERMALINK loaded from environment: {GUMROAD_PRODUCT_PERMALINK}")
 
 # === הגדרות תשלום (למשל, להודעת תזכורת) ===
 PAYPAL_ME_LINK = os.environ.get('PAYPAL_ME_LINK', 'https://www.paypal.me/ylevi376/120ILS') # הקישור שסיפקת
