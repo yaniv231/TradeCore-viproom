@@ -31,8 +31,8 @@ if not GSHEET_SPREADSHEET_ID:
 GSHEET_SHEET_NAME = os.environ.get('GSHEET_SHEET_NAME', 'Sheet1')
 
 # === הגדרות Gumroad ===
-GUMROAD_PRODUCT_PERMALINK = os.environ.get('GUMROAD_PRODUCT_PERMALINK', 'YOUR_GUMROAD_PRODUCT_PERMALINK_HERE') # <<< שנה לקישור/מזהה המוצר שלך ב-Gumroad!
-if not GUMROAD_PRODUCT_PERMALINK or GUMROAD_PRODUCT_PERMALINK == 'YOUR_GUMROAD_PRODUCT_PERMALINK_HERE':
+GUMROAD_PRODUCT_PERMALINK = os.environ.get('GUMROAD_PRODUCT_PERMALINK', https://ynlspire.gumroad.com/l/irexdq) # <<< שנה לקישור/מזהה המוצר שלך ב-Gumroad!
+if not GUMROAD_PRODUCT_PERMALINK or GUMROAD_PRODUCT_PERMALINK == https://ynlspire.gumroad.com/l/irexdq
     logger.warning("GUMROAD_PRODUCT_PERMALINK is not properly set. Gumroad integration will be affected.")
 GUMROAD_WEBHOOK_SECRET = os.environ.get('GUMROAD_WEBHOOK_SECRET', '')
 
