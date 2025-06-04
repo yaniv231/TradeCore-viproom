@@ -8,7 +8,60 @@ import re
 import asyncio # נדרש להרצת main
 # בחלק העליון של הקובץ
 import os
+# bot.py (החלק העיקרי)
+import logging
+from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters
+from telegram import Update
 
+# ... (יבוא שאר המודולים)
+
+# הגדרת מצבים
+AWAITING_EMAIL_AND_CONFIRMATION = 1
+
+# הגדרת לוגר
+logger = logging.getLogger(__name__)
+
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user = update.effective_user
+    logger.info(f"User {user.id} ({user.username}) started the bot")
+    
+    # קוד התחלת השיחה
+    await update.message.reply_text(
+        "ברוכים הבאים! כדי להצטרף לערוץ VIP, אנא שלחו את כתובת האימייל שלכם ואת המילה 'מאשר'"
+    )
+    return AWAITING_EMAIL_AND_CONFIRMATION
+
+async def handle_email_and_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    # קוד עיבוד אימייל ואישור
+    # ...
+
+def main():
+    # ... (קוד אתחול)
+    
+    # רישום HANDLERS - תיקון קריטי!
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start_command)],
+        states={
+            AWAITING_EMAIL_AND_CONFIRMATION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_email_and_confirmation)
+            ],
+        },
+        fallbacks=[CommandHandler('cancel', cancel_conversation_command)],
+    )
+    
+    application.add_handler(conv_handler)
+    application.add_error_handler(error_handler)
+    
+    # הפעלת הבוט
+    application.run_polling()
+
+if __name__ == '__main__':
+    # הפעלת הלוגיקה של הבוט בתוך thread נפרד
+    bot_thread = threading.Thread(target=main, daemon=True)
+    bot_thread.start()
+    
+    # הפעלת Flask
+    flask_app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
 # הוסף ברירת מחדל אם המשתנה חסר
 TRIAL_DAYS = int(os.environ.get('TRIAL_DAYS', 7))  # 7 ימים כברירת מחדל
 from telegram import Update, ReplyKeyboardRemove
