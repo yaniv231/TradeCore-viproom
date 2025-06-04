@@ -1,82 +1,78 @@
-# bot.py
+import os
+import logging
+from datetime import datetime, timedelta
+from flask import Flask, request
+from telegram import Update, Bot
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,  # ייבוא חסר שהיה צריך להוסיף
+    CallbackContext
+)
+from apscheduler.schedulers.background import BackgroundScheduler
+import gspread
+from google.oauth2.service_account import Credentials
+import yfinance as yf
+import mplfinance as mpf
+import matplotlib.pyplot as plt
+import requests
+from pytz import timezone
+from typing import cast
+import asyncio
 
-# ... (שאר הקוד ללא שינוי) ...
-from telegram.ext import ContextTypes
-# --- פונקציות עזר חדשות לשליחה אסינכרונית של פעולות ניהול ---
-async def async_handle_user_removal(context: ContextTypes.DEFAULT_TYPE):
-    """
-    פונקציה אסינכרונית לטיפול בהסרת משתמש מהערוץ, שליחת הודעה ועדכון GSheet.
-    נקראת דרך ה-JobQueue.
-    """
-    job_data = context.job.data
-    user_id = job_data['user_id']
-    logger.info(f"Async job: Starting removal process for user {user_id}")
-    try:
-        # ה-bot זמין דרך context.bot
-        await context.bot.ban_chat_member(chat_id=config.CHANNEL_ID, user_id=user_id)
-        logger.info(f"Async job: Banned user {user_id} from channel {config.CHANNEL_ID}")
-        await asyncio.sleep(1) # המתנה קצרה לפני unban
-        await context.bot.unban_chat_member(chat_id=config.CHANNEL_ID, user_id=user_id, only_if_banned=True)
-        logger.info(f"Async job: Unbanned user {user_id} from channel {config.CHANNEL_ID} (to allow rejoining if they pay).")
-        
-        removal_text = (f"הגישה שלך לערוץ {config.CHANNEL_USERNAME or 'TradeCore VIP'} הופסקה "
-                        f"מכיוון שלא התקבל תשלום לאחר תקופת הניסיון. "
-                        f"נשמח לראותך שוב אם תחליט להצטרף ולחדש את המנוי!")
-        await context.bot.send_message(chat_id=user_id, text=removal_text)
-        logger.info(f"Async job: Sent removal notice to user {user_id}.")
-        
-        g_sheets.update_user_status(user_id, {g_sheets.COL_PAYMENT_STATUS: PaymentStatus.EXPIRED_NO_PAYMENT.value})
-        logger.info(f"Async job: Updated GSheet status for user {user_id} to EXPIRED_NO_PAYMENT.")
+# הגדרת אפליקציית Flask עם השם הנדרש
+flask_app = Flask(__name__)  # שיניתי את השם ל-flask_app
 
-    except Exception as e:
-        logger.error(f"Async job: Error during removal process for user {user_id}: {e}", exc_info=True)
-        # גם אם יש שגיאה בפעולת הטלגרם, נעדכן את הסטטוס ב-GSheet
-        g_sheets.update_user_status(user_id, {g_sheets.COL_PAYMENT_STATUS: PaymentStatus.EXPIRED_NO_PAYMENT.value})
-        logger.info(f"Async job: Updated GSheet status for user {user_id} to EXPIRED_NO_PAYMENT despite Telegram API error during removal.")
+# ... (הגדרת משתנים ופונקציות עוזר) ...
 
+# הגדרת הפונקציות עם תיקון ה-async
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f"שלום {user.first_name}! ברוך הבא לבוט VIP."
+    )
 
-# --- משימות מתוזמנות עם APScheduler ---
-def check_trials_and_reminders_job(): # פונקציה סינכרונית שנקראת על ידי APScheduler
-    global flask_application_instance
-    logger.info("APScheduler: Running check_trials_and_reminders job.")
-    if not flask_application_instance:
-        logger.error("APScheduler: Telegram flask_application_instance not available for trial checks.")
-        return
+async def handle_user_removal(context: CallbackContext) -> None:
+    # ... קוד קיים ...
 
-    users_to_process = g_sheets.get_users_for_trial_reminder_or_removal()
-    for item in users_to_process:
-        action = item['action']
-        user_gs_data = item['data'] 
-        user_id_str = user_gs_data.get(g_sheets.COL_USER_ID)
-        if not user_id_str: continue
-        user_id = int(user_id_str)
-        email = user_gs_data.get(g_sheets.COL_EMAIL)
+# פונקציית Flask עם תיקון ה-async
+@flask_app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.json
+    # ... לוגיקת ה-webhook ...
+    
+    # דוגמה לשימוש ב-async בתוך Flask
+    async def async_task():
+        bot = Bot(token=TELEGRAM_TOKEN)
+        await bot.send_message(chat_id=CHANNEL_ID, text="הודעה חדשה התקבלה")
+    
+    asyncio.run(async_task())
+    
+    return 'OK', 200
 
-        if action == 'send_trial_end_reminder':
-            logger.info(f"APScheduler: Sending trial end reminder to user {user_id} (email: {email})")
-            # ... (קוד שליחת הודעת התזכורת, הוא כבר משתמש ב-job_queue וזה בסדר) ...
-            reminder_text = (
-                f"היי, כאן צוות {config.CHANNEL_USERNAME or 'TradeCore VIP'} 👋\n\n"
-                f"שבוע הניסיון שלך בערוץ ״חדר vip -TradeCore״ עומד להסתיים.\n"
-                # ... (שאר ההודעה) ...
-            )
-            flask_application_instance.job_queue.run_once(
-                send_async_message, 0, chat_id=user_id, data={'text': reminder_text}, name=f"trial_reminder_{user_id}"
-            )
-            g_sheets.update_user_status(user_id, {g_sheets.COL_PAYMENT_STATUS: PaymentStatus.PENDING_PAYMENT_AFTER_TRIAL.value})
+# הגדרת הפונקציה הראשית כ-async
+async def main() -> None:
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    
+    application.add_handler(CommandHandler("start", start))
+    # ... הוספת שאר ההאנדלרים ...
+    
+    scheduler = BackgroundScheduler(timezone=timezone('Asia/Jerusalem'))
+    scheduler.add_job(
+        handle_user_removal,
+        'interval',
+        hours=24,
+        args=[application],
+        next_run_time=datetime.now() + timedelta(minutes=1)
+    scheduler.start()
+    
+    await application.run_polling()
 
-
-        elif action == 'remove_user_no_payment':
-            logger.info(f"APScheduler: Queuing removal task for user {user_id} (email: {email}) due to no payment after trial.")
-            # כאן התיקון: במקום לבצע await ישירות, קובעים משימה ל-job_queue
-            flask_flask_application_instance.job_queue.run_once(
-                async_handle_user_removal, # הפונקציה האסינכרונית החדשה
-                0, # שלח מיד
-                chat_id=user_id, # לזיהוי ה-job
-                data={'user_id': user_id}, # העבר את ה-user_id הנדרש
-                name=f"exec_removal_{user_id}"
-            )
-            # את עדכון הסטטוס ב-GSheet העברנו לתוך הפונקציה האסינכרונית
-            # g_sheets.update_user_status(user_id, {g_sheets.COL_PAYMENT_STATUS: PaymentStatus.EXPIRED_NO_PAYMENT.value}) # <--- לא כאן
-
-# ... (שאר הקוד) ...
+# הפעלת האפליקציה כאשר הקובץ רץ ישירות
+if __name__ == '__main__':
+    # הפעלת Flask בשרת נפרד
+    flask_app.run(port=5000, debug=True)
+    
+    # הפעלת הבוט של Telegram
+    asyncio.run(main())
