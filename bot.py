@@ -285,47 +285,44 @@ async def cancel_conversation_command(update: Update, context: ContextTypes.DEFA
     return ConversationHandler.END
 
 # --- Webhook של Gumroad (באמצעות Flask) ---
-@flask_app.route('/webhook/gumroad', methods=['POST'])
+# bot.py - קטע ה-Flask app
+@flask_app.route('/webhook/gumroad', methods=['POST', 'GET']) # הוספנו GET לבדיקה קלה יותר מהדפדפן
 def gumroad_webhook_route():
-    global application_instance
-    data = request.json
-    logger.info(f"Received Gumroad webhook: {data}")
+    global application_instance # ודא שהוא מוגדר גלובלית אם אתה משתמש בו כאן
+    logger.info(f"--- GUMROAD WEBHOOK ENDPOINT HIT (METHOD: {request.method}) ---")
+    logger.info(f"Request Headers: {request.headers}")
+    try:
+        raw_data = request.get_data(as_text=True)
+        logger.info(f"Request Raw Data: {raw_data}")
+    except Exception as e:
+        logger.error(f"Error getting raw data from request: {e}")
 
-    email = data.get('email')
-    product_permalink = data.get('product_permalink')
-    sale_id = data.get('sale_id') or data.get('order_id')
-    # is_test_purchase = data.get('test', False) # Gumroad שולחים is_test_charge
-
-    if product_permalink != config.GUMROAD_PRODUCT_PERMALINK:
-        logger.warning(f"Webhook for wrong Gumroad product: {product_permalink}. Expected: {config.GUMROAD_PRODUCT_PERMALINK}")
-        return "Webhook for wrong product", 200
-
-    if email and sale_id:
-        telegram_user_id_str = g_sheets.update_user_payment_status_from_gumroad(email, sale_id)
-        if telegram_user_id_str:
-            telegram_user_id = int(telegram_user_id_str)
-            if application_instance:
-                message_text = (
-                    f"💰 תודה על רכישת המנוי דרך Gumroad!\n"
-                    f"הגישה שלך לערוץ {config.CHANNEL_USERNAME or config.CHANNEL_ID} חודשה/אושרה.\n"
-                    f"פרטי עסקה: {sale_id}"
-                )
-                application_instance.job_queue.run_once(
-                    send_async_message, 0, chat_id=telegram_user_id, data={'text': message_text}, name=f"gumroad_confirm_{telegram_user_id}"
-                )
-                logger.info(f"Queued payment confirmation to Telegram user {telegram_user_id} for Gumroad sale {sale_id}")
-            else:
-                logger.error("Telegram application_instance not available for Gumroad confirmation (webhook).")
+    try:
+        if request.is_json:
+            logger.info(f"Request Parsed JSON: {request.json}")
+        elif request.form:
+            logger.info(f"Request Form Data: {request.form.to_dict()}")
         else:
-            logger.warning(f"Gumroad sale processed for email {email}, but no matching Telegram user ID found in GSheet or user ID is not set.")
-    else:
-        logger.error(f"Gumroad webhook missing email or sale_id: {data}")
-        return "Missing data", 400
-    return "Webhook received successfully", 200
+            logger.info("Request does not appear to be JSON or Form data.")
+    except Exception as e:
+        logger.error(f"Error trying to access request.json or request.form: {e}")
 
-@flask_app.route('/health', methods=['GET'])
-def health_check():
-    return "OK", 200
+    # השאר את הלוגיקה המקורית שלך כאן אם אתה רוצה לבדוק אותה,
+    # או פשוט החזר תגובה בסיסית לצורך האבחון.
+    # לדוגמה, אם אתה רק בודק אם הפינג מגיע:
+    if request.method == 'POST' and request.is_json:
+        data = request.json
+        email = data.get('email')
+        product_permalink = data.get('product_permalink') or data.get('product_id')
+        sale_id = data.get('sale_id') or data.get('order_id')
+
+        if product_permalink == config.GUMROAD_PRODUCT_PERMALINK:
+            logger.info("Correct product permalink received in POST.")
+            # כאן יכולה להיות הלוגיקה המקורית שלך לעיבוד המכירה
+        else:
+            logger.warning(f"Webhook for wrong Gumroad product: {product_permalink} vs expected {config.GUMROAD_PRODUCT_PERMALINK}")
+
+    return "Webhook endpoint acknowledged by bot.py", 200
 
 # --- משימות מתוזמנות עם APScheduler ---
 def check_trials_and_reminders_job():
