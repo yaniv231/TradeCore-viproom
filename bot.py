@@ -288,41 +288,96 @@ async def cancel_conversation_command(update: Update, context: ContextTypes.DEFA
 # bot.py - קטע ה-Flask app
 @flask_app.route('/webhook/gumroad', methods=['POST', 'GET']) # הוספנו GET לבדיקה קלה יותר מהדפדפן
 def gumroad_webhook_route():
-    global application_instance # ודא שהוא מוגדר גלובלית אם אתה משתמש בו כאן
+    global application_instance
     logger.info(f"--- GUMROAD WEBHOOK ENDPOINT HIT (METHOD: {request.method}) ---")
     logger.info(f"Request Headers: {request.headers}")
-    try:
-        raw_data = request.get_data(as_text=True)
-        logger.info(f"Request Raw Data: {raw_data}")
-    except Exception as e:
-        logger.error(f"Error getting raw data from request: {e}")
+    raw_body = request.get_data(as_text=True)
+    logger.info(f"Request Raw Body: {raw_body}")
 
-    try:
-        if request.is_json:
-            logger.info(f"Request Parsed JSON: {request.json}")
-        elif request.form:
-            logger.info(f"Request Form Data: {request.form.to_dict()}")
+    data_to_process = None
+
+    if request.method == 'POST':
+        content_type = request.headers.get('Content-Type', '').lower()
+        if 'application/json' in content_type:
+            try:
+                data_to_process = request.json
+                logger.info(f"Received Gumroad POST JSON data: {data_to_process}")
+            except Exception as e:
+                logger.error(f"Error parsing JSON data from POST request: {e}")
+                return "Error parsing JSON data", 400
+        elif 'application/x-www-form-urlencoded' in content_type:
+            try:
+                data_to_process = request.form.to_dict()
+                logger.info(f"Received Gumroad POST Form data (converted to dict): {data_to_process}")
+            except Exception as e:
+                logger.error(f"Error parsing Form data from POST request: {e}")
+                return "Error parsing Form data", 400
         else:
-            logger.info("Request does not appear to be JSON or Form data.")
-    except Exception as e:
-        logger.error(f"Error trying to access request.json or request.form: {e}")
+            logger.warning(f"Received POST request with unexpected Content-Type: {content_type}")
+            # נסה בכל זאת לקרוא את הגוף אם הוא לא גדול מדי, למקרה חירום
+            if len(raw_body) < 10000: # הגנה מפני גוף גדול מדי
+                 logger.info(f"Attempting to process raw body for unexpected POST: {raw_body}")
+                 # כאן אפשר להוסיף לוגיקה לפרסור ידני אם צריך, אבל זה לא סטנדרטי
+            return "Unsupported Content-Type for POST", 415
 
-    # השאר את הלוגיקה המקורית שלך כאן אם אתה רוצה לבדוק אותה,
-    # או פשוט החזר תגובה בסיסית לצורך האבחון.
-    # לדוגמה, אם אתה רק בודק אם הפינג מגיע:
-    if request.method == 'POST' and request.is_json:
-        data = request.json
-        email = data.get('email')
-        product_permalink = data.get('product_permalink') or data.get('product_id')
-        sale_id = data.get('sale_id') or data.get('order_id')
+        if data_to_process:
+            email = data_to_process.get('email')
+            # Gumroad שולח 'permalink' עבור המוצר שנמכר, וגם 'product_permalink' שהוא ה-URL המלא.
+            # עדיף להשתמש ב-'permalink' (שהוא כמו ה-slug/ID) להשוואה עם מה ששמור ב-config.
+            product_identifier = data_to_process.get('permalink') or data_to_process.get('short_product_id') # ה-permalink הקצר
+            
+            # אם ה-permalink הקצר לא קיים, נסה להשתמש ב-product_id אם הוא זמין (לפעמים Gumroad שולח אותו)
+            if not product_identifier:
+                product_identifier = data_to_process.get('product_id')
 
-        if product_permalink == config.GUMROAD_PRODUCT_PERMALINK:
-            logger.info("Correct product permalink received in POST.")
-            # כאן יכולה להיות הלוגיקה המקורית שלך לעיבוד המכירה
+            sale_id = data_to_process.get('sale_id') or data_to_process.get('order_number') # השתמש במזהה מכירה או מספר הזמנה
+            subscription_id = data_to_process.get('subscription_id') # למקרה של מנויים חוזרים
+
+            logger.info(f"Extracted for processing: email='{email}', product_identifier='{product_identifier}', sale_id='{sale_id}', subscription_id='{subscription_id}'")
+            logger.info(f"Comparing with configured GUMROAD_PRODUCT_PERMALINK: '{config.GUMROAD_PRODUCT_PERMALINK}'")
+
+
+            if product_identifier and product_identifier == config.GUMROAD_PRODUCT_PERMALINK:
+                logger.info("Correct product permalink received.")
+                if email and sale_id:
+                    telegram_user_id_str = g_sheets.update_user_payment_status_from_gumroad(
+                        email, 
+                        str(sale_id), # ודא שזה תמיד מחרוזת
+                        str(subscription_id) if subscription_id else None
+                    )
+                    if telegram_user_id_str:
+                        telegram_user_id = int(telegram_user_id_str)
+                        if application_instance:
+                            message_text = (
+                                f"💰 תודה על רכישת המנוי דרך Gumroad!\n"
+                                f"הגישה שלך לערוץ {config.CHANNEL_USERNAME or config.CHANNEL_ID} חודשה/אושרה.\n"
+                                f"פרטי עסקה: {sale_id}"
+                            )
+                            application_instance.job_queue.run_once(
+                                send_async_message, 0, chat_id=telegram_user_id, data={'text': message_text}, name=f"gumroad_confirm_{telegram_user_id}"
+                            )
+                            logger.info(f"Queued payment confirmation to Telegram user {telegram_user_id} for Gumroad sale {sale_id}")
+                            # כאן תוכל להוסיף לוגיקה נוספת אם צריך, כמו לוודא שהמשתמש בערוץ
+                        else:
+                            logger.error("Telegram application_instance not available for Gumroad confirmation (webhook).")
+                    else:
+                        logger.warning(f"Gumroad sale processed for email {email}, but no matching Telegram user ID found/updated in GSheet.")
+                    return "Webhook data processed", 200
+                else:
+                    logger.error(f"Gumroad POST webhook for correct product, but missing email or sale_id: {data_to_process}")
+                    return "Missing email or sale_id in payload", 400
+            else:
+                logger.warning(f"Webhook for wrong Gumroad product: Received permalink='{product_identifier}', Expected='{config.GUMROAD_PRODUCT_PERMALINK}'")
+                return "Webhook for wrong product (but endpoint was hit)", 200 # עדיין החזר 200 כדי שגאמרוד לא ינסה שוב ושוב
         else:
-            logger.warning(f"Webhook for wrong Gumroad product: {product_permalink} vs expected {config.GUMROAD_PRODUCT_PERMALINK}")
+            logger.warning("No data could be processed from the POST request.")
+            return "Could not process data from POST request", 400
 
-    return "Webhook endpoint acknowledged by bot.py", 200
+    elif request.method == 'GET':
+        logger.info("Received GET request to Gumroad webhook endpoint (likely a manual test or simple ping).")
+        return "GET request received. This endpoint expects POST from Gumroad for sales.", 200
+    
+    return "Request method not explicitly handled", 405 # Method Not Allowed
 
 # --- משימות מתוזמנות עם APScheduler ---
 def check_trials_and_reminders_job():
