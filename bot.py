@@ -20,7 +20,13 @@ AWAITING_EMAIL_AND_CONFIRMATION = 1
 
 # הגדרת לוגר
 logger = logging.getLogger(__name__)
-
+# ב-bot.py
+async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """פקודת בדיקה פשוטה"""
+    await update.message.reply_text("✅ הבוט פעיל! תקשורת טלגרם תקינה")
+    
+# בתוך main()
+application.add_handler(CommandHandler("test", test_command))
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     logger.info(f"User {user.id} ({user.username}) started the bot")
