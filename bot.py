@@ -37,10 +37,21 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     )
     return AWAITING_EMAIL_AND_CONFIRMATION
 
-async def handle_email_and_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    # קוד עיבוד אימייל ואישור
-    # ...
+# לפני התיקון (גורם לשגיאה)
+def example_function():  # שורה 40
+def main():  # שורה 44 - חסר גוף לפונקציה למעלה!
 
+# אחרי התיקון
+def example_function():
+    # הוסף גוף פונקציה עם הזחה
+    print("This function now has a proper body")
+def placeholder_function():  # שורה 40
+    pass  # הוספת גוף פונקציה
+
+def main():
+    # הקוד שלך
+def main():
+    # קוד תקין עם הזחה
 def main():
     # ... (קוד אתחול)
     
