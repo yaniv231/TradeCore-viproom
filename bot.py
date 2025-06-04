@@ -6,7 +6,11 @@ import threading
 import time
 import re
 import asyncio # נדרש להרצת main
+# בחלק העליון של הקובץ
+import os
 
+# הוסף ברירת מחדל אם המשתנה חסר
+TRIAL_DAYS = int(os.environ.get('TRIAL_DAYS', 7))  # 7 ימים כברירת מחדל
 from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
     Application,
