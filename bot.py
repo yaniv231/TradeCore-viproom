@@ -381,6 +381,42 @@ def post_scheduled_content_job():
     selected_stock = random.choice(config.STOCK_SYMBOLS_LIST)
     logger.info(f"APScheduler: Selected stock {selected_stock} for posting.")
 
+    # ---- הודעת טקסט פשוטה לבדיקה ----
+    try:
+        current_time_jerusalem = datetime.datetime.now(datetime.timezone.utc).astimezone(pytz.timezone('Asia/Jerusalem'))
+        test_message = f"📢 בדיקה אוטומטית מהבוט! 📢\nמניה נבחרה (ללא גרף): {selected_stock}\nשעה: {current_time_jerusalem.strftime('%Y-%m-%d %H:%M:%S %Z')}"
+
+        if application_instance and config.CHANNEL_ID:
+            application_instance.job_queue.run_once(
+                send_async_message, 0, data={'chat_id': config.CHANNEL_ID, 'text': test_message}, name=f"test_content_post_{selected_stock}"
+            )
+            logger.info(f"APScheduler: Queued TEST text content for {selected_stock} to channel {config.CHANNEL_ID}")
+        else:
+            logger.error("APScheduler: application_instance or CHANNEL_ID is missing for test message.")
+        return # דלג על יצירת הגרף לצורך הבדיקה הזו
+    except Exception as e_test:
+        logger.error(f"APScheduler: Error during simple text test post: {e_test}", exc_info=True)
+    # ---- סוף הודעת טקסט פשוטה ----
+
+    # # # קוד יצירת הגרף המקורי (כרגע בקומנט לצורך הבדיקה)
+    # logger.info(f"APScheduler: Selected stock {selected_stock} for posting.")
+    # try:
+    #     image_stream, analysis_text = graph_generator.create_stock_graph_and_text(selected_stock)
+
+    #     if image_stream and analysis_text:
+    #         job_data = {
+    #             'chat_id': config.CHANNEL_ID,
+    #             'photo': image_stream,
+    #             'caption': analysis_text
+    #         }
+    #         application_instance.job_queue.run_once(
+    #             send_async_photo_message, 0, data=job_data, name=f"content_post_photo_{selected_stock}"
+    #         )
+    #         logger.info(f"APScheduler: Queued photo content for {selected_stock} to channel {config.CHANNEL_ID}")
+    #     else:
+    #         logger.warning(f"APScheduler: Failed to generate graph or text for {selected_stock}. Details: {analysis_text}")
+    # except Exception as e:
+    #     logger.error(f"APScheduler: Error posting scheduled content for {selected_stock}: {e}", exc_info=True)
     try:
         image_stream, analysis_text = graph_generator.create_stock_graph_and_text(selected_stock)
         
