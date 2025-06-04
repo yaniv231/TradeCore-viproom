@@ -31,7 +31,7 @@ if not GSHEET_SPREADSHEET_ID:
 GSHEET_SHEET_NAME = os.environ.get('GSHEET_SHEET_NAME', 'Sheet1')
 
 # === הגדרות Gumroad ===
-GUMROAD_PRODUCT_PERMALINK = os.environ.get('GUMROAD_PRODUCT_PERMALINK', 'https://ynlspire.gumroad.com/l/irexdq') # <<< שנה לקישור/מזהה המוצר שלך ב-Gumroad!
+GUMROAD_PRODUCT_PERMALINK = os.environ.get('GUMROAD_PRODUCT_PERMALINK', 'irexdq') # <<< שנה לקישור/מזהה המוצר שלך ב-Gumroad!
 if not GUMROAD_PRODUCT_PERMALINK:
     logger.critical("CRITICAL: GUMROAD_PRODUCT_PERMALINK environment variable is not set in Render!")
     # raise ValueError("CRITICAL: GUMROAD_PRODUCT_PERMALINK environment variable not set!")
