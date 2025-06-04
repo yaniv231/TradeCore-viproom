@@ -37,10 +37,10 @@ async def async_handle_user_removal(context: ContextTypes.DEFAULT_TYPE):
 
 # --- משימות מתוזמנות עם APScheduler ---
 def check_trials_and_reminders_job(): # פונקציה סינכרונית שנקראת על ידי APScheduler
-    global application_instance
+    global flask_application_instance
     logger.info("APScheduler: Running check_trials_and_reminders job.")
-    if not application_instance:
-        logger.error("APScheduler: Telegram application_instance not available for trial checks.")
+    if not flask_application_instance:
+        logger.error("APScheduler: Telegram flask_application_instance not available for trial checks.")
         return
 
     users_to_process = g_sheets.get_users_for_trial_reminder_or_removal()
@@ -60,7 +60,7 @@ def check_trials_and_reminders_job(): # פונקציה סינכרונית שנק
                 f"שבוע הניסיון שלך בערוץ ״חדר vip -TradeCore״ עומד להסתיים.\n"
                 # ... (שאר ההודעה) ...
             )
-            application_instance.job_queue.run_once(
+            flask_application_instance.job_queue.run_once(
                 send_async_message, 0, chat_id=user_id, data={'text': reminder_text}, name=f"trial_reminder_{user_id}"
             )
             g_sheets.update_user_status(user_id, {g_sheets.COL_PAYMENT_STATUS: PaymentStatus.PENDING_PAYMENT_AFTER_TRIAL.value})
@@ -69,7 +69,7 @@ def check_trials_and_reminders_job(): # פונקציה סינכרונית שנק
         elif action == 'remove_user_no_payment':
             logger.info(f"APScheduler: Queuing removal task for user {user_id} (email: {email}) due to no payment after trial.")
             # כאן התיקון: במקום לבצע await ישירות, קובעים משימה ל-job_queue
-            application_instance.job_queue.run_once(
+            flask_flask_application_instance.job_queue.run_once(
                 async_handle_user_removal, # הפונקציה האסינכרונית החדשה
                 0, # שלח מיד
                 chat_id=user_id, # לזיהוי ה-job
