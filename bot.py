@@ -135,11 +135,16 @@ async def async_handle_user_removal(context: ContextTypes.DEFAULT_TYPE):
 
 
 # --- תהליך אישור התנאים (ConversationHandler) ---
+# bot.py
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
-    effective_username = user.username or user.first_name or f"User_{user.id}"
-    logger.info(f"User {user.id} ({effective_username}) started the bot.")
-    user_gs_data = g_sheets.get_user_data(user.id)
+    logger.info(f"--- MINIMAL DEBUG: /start received by user {user.id} ---")
+    try:
+        await update.message.reply_text("MINIMAL DEBUG: Bot alive and received /start!")
+        logger.info(f"--- MINIMAL DEBUG: Reply sent for /start to user {user.id} ---")
+    except Exception as e:
+        logger.error(f"--- MINIMAL DEBUG: Error in minimal start_command for user {user.id}: {e} ---", exc_info=True)
+    return ConversationHandler.END # חשוב לסיים את השיחה או להעביר למצב הבא
 
     if user_gs_data:
         confirmation_status_str = user_gs_data.get(g_sheets.COL_CONFIRMATION_STATUS)
