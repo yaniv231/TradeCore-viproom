@@ -1,7 +1,7 @@
 # bot.py
 
 # ... (שאר הקוד ללא שינוי) ...
-
+from telegram.ext import ContextTypes
 # --- פונקציות עזר חדשות לשליחה אסינכרונית של פעולות ניהול ---
 async def async_handle_user_removal(context: ContextTypes.DEFAULT_TYPE):
     """
