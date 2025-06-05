@@ -5,7 +5,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # === הגדרות טלגרם ===
-TELEGRAM_BOT_TOKEN = os.environ.get('7592108692:AAHBi0G7k53hUnmc1ypJx8YkuGmdFuOdL4I')
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 if not TELEGRAM_BOT_TOKEN:
     logger.critical("CRITICAL: TELEGRAM_BOT_TOKEN environment variable is not set in Render!")
     # מומלץ לגרום לקריסה אם הטוקן לא מוגדר בסביבת פרודקשן
