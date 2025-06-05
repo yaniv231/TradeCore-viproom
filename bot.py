@@ -131,7 +131,8 @@ async def simple_start_command_for_full_bot(update: Update, context: ContextType
         logger.info(f"--- FULL BOT (SIMPLIFIED HANDLER): Reply sent to user {user.id} ---")
     except Exception as e:
         logger.error(f"--- FULL BOT (SIMPLIFIED HANDLER): Error sending reply to user {user.id}: {e} ---", exc_info=True)
-
+async def general_error_handler_for_full_bot(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.error("--- FULL BOT (GENERAL ERROR HANDLER): Exception during update processing by dispatcher ---", exc_info=context.error)
 # --- הלוגיקה המלאה של ConversationHandler (כרגע בהערה) ---
 # async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 #     user = update.effective_user
