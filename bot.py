@@ -6,7 +6,7 @@ import threading
 import time
 import re
 import asyncio
-import pytz # הוספת ייבוא ל-pytz
+import pytz # ודא שהוא מותקן (ברשימת הדרישות)
 
 from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
@@ -25,30 +25,33 @@ import g_sheets
 from g_sheets import ConfirmationStatus, PaymentStatus
 import graph_generator
 
-
-# --- הגדרות לוגינג ---
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO  # ודא שהשורה הזו נראית כך, והפסיק שלפניה תקין אם יש פרמטרים נוספים לפני כן
+    level=logging.INFO
 )
-# שורות הלוגינג המפורט (ודא שהן מגיעות *אחרי* basicConfig):
-logging.getLogger("telegram.ext.Application").setLevel(logging.DEBUG) # אם החלטת להוסיף את זה
-logging.getLogger("telegram.ext.Updater").setLevel(logging.DEBUG)     # אם החלטת להוסיף את זה
-logging.getLogger("telegram.ext.Dispatcher").setLevel(logging.DEBUG)  # אם החלטת להוסיף את זה
-logging.getLogger("telegram.bot").setLevel(logging.DEBUG)         # אם החלטת להוסיף את זה
-logging.getLogger("httpx").setLevel(logging.DEBUG)                # אם החלטת להוסיף את זה
+# הגברת רמת לוגינג לספריות טלגרם לבדיקה אם עדיין יש בעיות קליטת הודעות
+logging.getLogger("telegram.ext.Application").setLevel(logging.DEBUG)
+logging.getLogger("telegram.ext.Updater").setLevel(logging.DEBUG)
+logging.getLogger("telegram.ext.Dispatcher").setLevel(logging.DEBUG)
+logging.getLogger("telegram.bot").setLevel(logging.DEBUG)
+logging.getLogger("httpx").setLevel(logging.DEBUG)
 
-logger = logging.getLogger(__name__) # הלוגר של הקוד שלך
-# ... (שאר הקוד שלך) ...
+logging.getLogger("apscheduler").setLevel(logging.WARNING)
+logger = logging.getLogger(__name__)
 
-AWAITING_EMAIL_AND_CONFIRMATION = range(1)
+# --- משתנים גלובליים ל-ConversationHandler (מצבים) ---
+# השתמשנו בשם AWAITING_EMAIL_AND_CONFIRMATION בגרסה הקודמת
+# אם אתה מעדיף את השמות המקוריים, שנה אותם גם בהגדרת ה-ConversationHandler
+# ASK_EMAIL, WAITING_FOR_DISCLAIMER_CONFIRMATION = range(2)
+AWAITING_EMAIL_AND_CONFIRMATION = range(1) # כרגע יש רק מצב אחד פעיל אחרי הכניסה לשיחה
+
 
 application_instance: Application | None = None
 flask_app = Flask(__name__)
 scheduler = BackgroundScheduler(timezone="Asia/Jerusalem")
 bot_thread_event = threading.Event()
 
-# --- פונקציות עזר שהיו קודם ---
+# --- פונקציות עזר ---
 def get_disclaimer_dates():
     today = datetime.date.today()
     trial_end_date = today + datetime.timedelta(days=config.TRIAL_PERIOD_DAYS)
@@ -76,7 +79,10 @@ async def send_invite_link_or_add_to_channel(context: ContextTypes.DEFAULT_TYPE,
         logger.error(f"Could not create invite link for user {user_id}: {e}", exc_info=True)
         await context.bot.send_message(user_id, "אירעה שגיאה ביצירת קישור ההצטרפות. אנא פנה למנהל.")
         if config.ADMIN_USER_ID and config.ADMIN_USER_ID != 0:
-            await context.bot.send_message(config.ADMIN_USER_ID, f"⚠️ שגיאה ביצירת קישור למשתמש {actual_username} ({user_id}): {e}")
+            try:
+                await context.bot.send_message(config.ADMIN_USER_ID, f"⚠️ שגיאה ביצירת קישור למשתמש {actual_username} ({user_id}): {e}")
+            except Exception as admin_err:
+                logger.error(f"Failed to send error notification to admin: {admin_err}")
         return False
 
 async def send_async_message(context: ContextTypes.DEFAULT_TYPE):
@@ -125,80 +131,201 @@ async def async_handle_user_removal(context: ContextTypes.DEFAULT_TYPE):
         g_sheets.update_user_data(user_id, {g_sheets.COL_PAYMENT_STATUS: PaymentStatus.EXPIRED_NO_PAYMENT.value})
         logger.info(f"Async job: Updated GSheet status for user {user_id} to EXPIRED_NO_PAYMENT despite Telegram API error.")
 
-# --- בדיקה ראשונית ---
-async def simple_start_command_for_full_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+# --- Handler פשוט לבדיקה ראשונית (כרגע בהערה) ---
+# async def simple_start_command_for_full_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+#     user = update.effective_user
+#     logger.info(f"--- FULL BOT (SIMPLIFIED HANDLER): /start received by user {user.id} ({user.username or user.first_name}) ---")
+#     try:
+#         await update.message.reply_text('FULL BOT (SIMPLIFIED HANDLER) responding to /start! Bot is up and connection to Telegram works.')
+#         logger.info(f"--- FULL BOT (SIMPLIFIED HANDLER): Reply sent to user {user.id} ---")
+#     except Exception as e:
+#         logger.error(f"--- FULL BOT (SIMPLIFIED HANDLER): Error sending reply to user {user.id}: {e} ---", exc_info=True)
+
+
+# --- ה-ConversationHandler המלא (מופעל כעת) ---
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
-    logger.info(f"--- FULL BOT (SIMPLIFIED HANDLER): /start received by user {user.id} ({user.username or user.first_name}) ---")
-    try:
-        await update.message.reply_text('FULL BOT (SIMPLIFIED HANDLER) responding to /start!')
-        logger.info(f"--- FULL BOT (SIMPLIFIED HANDLER): Reply sent to user {user.id} ---")
-    except Exception as e:
-        logger.error(f"--- FULL BOT (SIMPLIFIED HANDLER): Error sending reply to user {user.id}: {e} ---", exc_info=True)
-async def general_error_handler_for_full_bot(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.error("--- FULL BOT (GENERAL ERROR HANDLER): Exception during update processing by dispatcher ---", exc_info=context.error)
-# --- הלוגיקה המלאה של ConversationHandler (כרגע בהערה) ---
-# async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-#     user = update.effective_user
-#     effective_username = user.username or user.first_name or f"User_{user.id}"
-#     logger.info(f"User {user.id} ({effective_username}) started the bot (full handler).")
-#     # ... (כל הלוגיקה של start_command המקורי מגרסה #42) ...
-#     # ... ודא שהוא מסתיים ב- return AWAITING_EMAIL_AND_CONFIRMATION או ConversationHandler.END ...
-#     # לדוגמה:
-#     today_str, trial_end_str = get_disclaimer_dates()
-#     disclaimer_message = (
-#         f"היי, זה מצוות הערוץ ״חדר vip -TradeCore״\n\n"
-#         f"המנוי שלך (לתקופת הניסיון) יתחיל עם אישור התנאים ויסתיים כעבור {config.TRIAL_PERIOD_DAYS} ימים.\n"
-#         f"(לתשומת ליבך, אם תאשר היום {today_str}, הניסיון יסתיים בערך ב-{trial_end_str}).\n\n"
-#         f"חשוב להבהיר: 🚫התוכן כאן אינו מהווה ייעוץ או המלצה פיננסית מכל סוג! "
-#         f"📌 ההחלטות בסופו של דבר בידיים שלכם – איך לפעול, מתי להיכנס ומתי לצאת מהשוק.\n\n"
-#         f"כדי להמשיך, אנא שלח את כתובת האימייל שלך (זו שתשמש לתשלום ב-Gumroad אם תבחר להמשיך) ולאחר מכן את המילה 'מאשר' או 'מקובל'.\n"
-#         f"לדוגמה: `myemail@example.com מאשר`"
-#     )
-#     await update.message.reply_text(disclaimer_message)
-#     if not g_sheets.add_new_user_for_disclaimer(user.id, effective_username):
-#         if config.ADMIN_USER_ID and config.ADMIN_USER_ID != 0:
-#             await context.bot.send_message(config.ADMIN_USER_ID, f"שגיאה בהוספת משתמש {user.id} ל-GSheets בשלב ההצהרה.")
-#     job_name = f"disclaimer_warning_{user.id}"
-#     # ... (שאר הלוגיקה של תזמון האזהרה) ...
-#     context.job_queue.run_once(
-#         disclaimer_24h_warning_job_callback,
-#         datetime.timedelta(hours=config.REMINDER_MESSAGE_HOURS_BEFORE_WARNING),
-#         chat_id=user.id, name=job_name, data={'user_id': user.id}
-#     )
-#     logger.info(f"Scheduled 24h disclaimer warning for user {user.id} with job name {job_name}")
-#     return AWAITING_EMAIL_AND_CONFIRMATION
+    effective_username = user.username or user.first_name or f"User_{user.id}"
+    logger.info(f"User {user.id} ({effective_username}) started the bot (full conv handler).")
+    
+    # הוספת לוגינג מפורט בתחילת הפונקציה
+    logger.debug(f"Context for user {user.id}: User data from context: {context.user_data}")
+
+    user_gs_data = g_sheets.get_user_data(user.id)
+    if user_gs_data is not None:
+        logger.info(f"User {user.id} data found in GSheets. Confirmation: {user_gs_data.get(g_sheets.COL_CONFIRMATION_STATUS)}, Payment: {user_gs_data.get(g_sheets.COL_PAYMENT_STATUS)}")
+    else:
+        logger.info(f"User {user.id} not found in GSheets or error fetching.")
+
+    if user_gs_data:
+        confirmation_status_str = user_gs_data.get(g_sheets.COL_CONFIRMATION_STATUS)
+        payment_status_str = user_gs_data.get(g_sheets.COL_PAYMENT_STATUS)
+        is_confirmed = confirmation_status_str == ConfirmationStatus.CONFIRMED_DISCLAIMER.value
+        is_trial_or_paid = payment_status_str in [PaymentStatus.TRIAL.value, PaymentStatus.PAID_SUBSCRIBER.value]
+
+        if is_confirmed and is_trial_or_paid:
+            logger.info(f"User {user.id} is already registered and active. Sending reply.")
+            await update.message.reply_text("אתה כבר רשום ופעיל בערוץ! 😊")
+            logger.info(f"'Already registered' reply sent to {user.id}. Ending conversation.")
+            return ConversationHandler.END
+        
+        elif confirmation_status_str in [ConfirmationStatus.PENDING_DISCLAIMER.value, ConfirmationStatus.WARNED_NO_DISCLAIMER.value]:
+            logger.info(f"User {user.id} started but did not finish disclaimer. Prompting again.")
+            await update.message.reply_text(
+                "נראה שהתחלת בתהליך ההרשמה אך לא סיימת.\n"
+                "אנא שלח את כתובת האימייל שלך (לצורך תשלום עתידי ב-Gumroad) ואת המילה 'מאשר' או 'מקובל'.\n"
+                "לדוגמה: `myemail@example.com מאשר`"
+            )
+            logger.info(f"Re-prompt message sent to {user.id}. Returning AWAITING_EMAIL_AND_CONFIRMATION.")
+            return AWAITING_EMAIL_AND_CONFIRMATION
+    
+    logger.info(f"User {user.id} is new or needs to restart disclaimer. Preparing disclaimer message.")
+    today_str, trial_end_str = get_disclaimer_dates()
+    disclaimer_message = (
+        f"היי, זה מצוות הערוץ ״חדר vip -TradeCore״\n\n"
+        f"המנוי שלך (לתקופת הניסיון) יתחיל עם אישור התנאים ויסתיים כעבור {config.TRIAL_PERIOD_DAYS} ימים.\n"
+        f"(לתשומת ליבך, אם תאשר היום {today_str}, הניסיון יסתיים בערך ב-{trial_end_str}).\n\n"
+        f"חשוב להבהיר: 🚫התוכן כאן אינו מהווה ייעוץ או המלצה פיננסית מכל סוג! "
+        f"📌 ההחלטות בסופו של דבר בידיים שלכם – איך לפעול, מתי להיכנס ומתי לצאת מהשוק.\n\n"
+        f"כדי להמשיך, אנא שלח את כתובת האימייל שלך (זו שתשמש לתשלום ב-Gumroad אם תבחר להמשיך) ולאחר מכן את המילה 'מאשר' או 'מקובל'.\n"
+        f"לדוגמה: `myemail@example.com מאשר`"
+    )
+    await update.message.reply_text(disclaimer_message)
+    logger.info(f"Disclaimer message sent to {user.id}.")
+    
+    logger.info(f"Adding/updating user {user.id} in GSheets for disclaimer.")
+    add_success = g_sheets.add_new_user_for_disclaimer(user.id, effective_username)
+    logger.info(f"g_sheets.add_new_user_for_disclaimer for {user.id} returned: {add_success}")
+    if not add_success and config.ADMIN_USER_ID and config.ADMIN_USER_ID != 0:
+        await context.bot.send_message(config.ADMIN_USER_ID, f"שגיאה בהוספת משתמש {user.id} ל-GSheets בשלב ההצהרה.")
+
+    logger.info(f"Scheduling 24h warning job for {user.id}.")
+    job_name = f"disclaimer_warning_{user.id}"
+    # הסר משימות קיימות עם אותו שם אם יש
+    current_jobs = context.job_queue.get_jobs_by_name(job_name)
+    for job_item in current_jobs: # שיניתי את שם המשתנה כדי למנוע התנגשות עם job מה-callback
+        job_item.schedule_removal()
+        logger.info(f"Removed existing job: {job_name}")
+        
+    context.job_queue.run_once(
+        disclaimer_24h_warning_job_callback,
+        datetime.timedelta(hours=config.REMINDER_MESSAGE_HOURS_BEFORE_WARNING),
+        chat_id=user.id, # משמש ב-callback כדי לקבל את user_id
+        name=job_name,
+        data={'user_id': user.id} # העבר user_id במפורש
+    )
+    logger.info(f"Scheduled 24h disclaimer warning for user {user.id} with job name {job_name}. Returning AWAITING_EMAIL_AND_CONFIRMATION.")
+    return AWAITING_EMAIL_AND_CONFIRMATION
 
 
-# async def handle_email_and_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-#     # ... (כל הלוגיקה של handle_email_and_confirmation המקורי מגרסה #42) ...
-#     # ... ודא שהוא מסתיים ב- return ConversationHandler.END או מצב אחר ...
-#     user = update.effective_user
-#     text = update.message.text.strip() 
-#     # ... (שאר הלוגיקה) ...
-#     # await send_invite_link_or_add_to_channel(context, user.id, effective_username)
-#     return ConversationHandler.END
+async def handle_email_and_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user = update.effective_user
+    text = update.message.text.strip() 
+    effective_username = user.username or user.first_name or f"User_{user.id}"
+    logger.info(f"User {user.id} ({effective_username}) sent text for disclaimer confirmation: {text}")
 
+    email_match = re.search(r"[\w\.-]+@[\w\.-]+\.\w+", text)
+    confirmation_keywords = ["מאשר", "מקובל", "אישור", "ok", "yes", "כן"]
+    text_lower = text.lower()
+    confirmation_keyword_found = any(keyword in text_lower for keyword in confirmation_keywords)
 
-# async def disclaimer_24h_warning_job_callback(context: ContextTypes.DEFAULT_TYPE):
-#     # ... (כל הלוגיקה של disclaimer_24h_warning_job_callback המקורי מגרסה #42) ...
-#     pass
+    if email_match and confirmation_keyword_found:
+        email = email_match.group(0).lower()
+        logger.info(f"User {user.id} provided email {email} and confirmed disclaimer.")
 
-# async def cancel_request_job_callback(context: ContextTypes.DEFAULT_TYPE):
-#     # ... (כל הלוגיקה של cancel_request_job_callback המקורי מגרסה #42) ...
-#     pass
+        g_sheets.update_user_email_and_confirmation(user.id, email, ConfirmationStatus.CONFIRMED_DISCLAIMER)
+        g_sheets.start_user_trial(user.id)
 
-# async def cancel_conversation_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-#     # ... (כל הלוגיקה של cancel_conversation_command המקורי מגרסה #42) ...
-#     return ConversationHandler.END
+        job_name_warn = f"disclaimer_warning_{user.id}"
+        current_jobs_warn = context.job_queue.get_jobs_by_name(job_name_warn)
+        for job_item in current_jobs_warn: job_item.schedule_removal()
+        logger.info(f"Removed disclaimer warning job for user {user.id} after confirmation.")
+        
+        job_name_cancel = f"cancel_request_{user.id}"
+        cancel_jobs = context.job_queue.get_jobs_by_name(job_name_cancel)
+        for job_item in cancel_jobs: job_item.schedule_removal()
+        logger.info(f"Removed cancel request job for user {user.id} after confirmation.")
 
-# --- Webhook של Gumroad (באמצעות Flask) ---
+        await send_invite_link_or_add_to_channel(context, user.id, effective_username)
+        return ConversationHandler.END
+    else:
+        await update.message.reply_text(
+            "לא הצלחתי לזהות כתובת אימייל תקינה ואישור ('מאשר' או 'מקובל').\n"
+            "אנא שלח שוב בפורמט: `כתובת@אימייל.קום מאשר`"
+        )
+        return AWAITING_EMAIL_AND_CONFIRMATION
+
+async def disclaimer_24h_warning_job_callback(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    if not job or not job.data or 'user_id' not in job.data:
+        logger.error(f"disclaimer_24h_warning_job_callback: Invalid job data: {job.data if job else 'No job'}")
+        return
+    user_id = job.data['user_id'] # קבל את ה-user_id מה-data
+    logger.info(f"Running 24h disclaimer warning job callback for user {user_id}")
+    user_gs_data = g_sheets.get_user_data(user_id)
+
+    if user_gs_data and user_gs_data.get(g_sheets.COL_CONFIRMATION_STATUS) == ConfirmationStatus.PENDING_DISCLAIMER.value:
+        bot_info = await context.bot.get_me()
+        bot_username = bot_info.username
+        warning_message = (
+            f"⚠️ אזהרה אחרונה ⚠️\n\n"
+            f"לא קיבלנו ממך אישור, והבקשה שלך להצטרפות לערוץ עדיין ממתינה.\n\n"
+            f"אם לא נקבל מענה בהקדם – הבקשה תבוטל ותוסר. זהו תזכורת אחרונה.\n\n"
+            f"צוות הערוץ ״חדר vip - TradeCore ״ http://t.me/{bot_username}"
+        )
+        await context.bot.send_message(chat_id=user_id, text=warning_message)
+        g_sheets.update_user_disclaimer_status(user_id, ConfirmationStatus.WARNED_NO_DISCLAIMER)
+        logger.info(f"Sent final disclaimer warning to user {user_id}")
+
+        job_name_cancel = f"cancel_request_{user_id}"
+        current_cancel_jobs = context.job_queue.get_jobs_by_name(job_name_cancel)
+        for c_job in current_cancel_jobs: c_job.schedule_removal()
+        context.job_queue.run_once(
+            cancel_request_job_callback,
+            datetime.timedelta(hours=config.HOURS_FOR_FINAL_CONFIRMATION_AFTER_WARNING),
+            chat_id=user_id, name=job_name_cancel, data={'user_id': user_id} # העבר user_id
+        )
+        logger.info(f"Scheduled final cancellation job for user {user_id} with job name {job_name_cancel}")
+    else:
+        logger.info(f"User {user_id} already confirmed or not in pending state. Warning job for disclaimer skipped.")
+
+async def cancel_request_job_callback(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    if not job or not job.data or 'user_id' not in job.data:
+        logger.error(f"cancel_request_job_callback: Invalid job data: {job.data if job else 'No job'}")
+        return
+    user_id = job.data['user_id'] # קבל את ה-user_id מה-data
+    logger.info(f"Running final cancellation job callback for user {user_id} (disclaimer)")
+    user_gs_data = g_sheets.get_user_data(user_id)
+    if user_gs_data and user_gs_data.get(g_sheets.COL_CONFIRMATION_STATUS) == ConfirmationStatus.WARNED_NO_DISCLAIMER.value:
+        g_sheets.update_user_disclaimer_status(user_id, ConfirmationStatus.CANCELLED_NO_DISCLAIMER)
+        await context.bot.send_message(chat_id=user_id, text="בקשתך להצטרפות לערוץ בוטלה עקב חוסר מענה לאישור התנאים.")
+        logger.info(f"Cancelled request for user {user_id} due to no final disclaimer confirmation.")
+
+async def cancel_conversation_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user = update.effective_user
+    logger.info(f"User {user.id} canceled the conversation using /cancel.")
+    await update.message.reply_text(
+        'תהליך ההרשמה בוטל. תוכל להתחיל מחדש על ידי שליחת /start.',
+        reply_markup=ReplyKeyboardRemove()
+    )
+    user_gs_data = g_sheets.get_user_data(user.id)
+    if user_gs_data and user_gs_data.get(g_sheets.COL_CONFIRMATION_STATUS) in [
+        ConfirmationStatus.PENDING_DISCLAIMER.value, ConfirmationStatus.WARNED_NO_DISCLAIMER.value
+    ]:
+        g_sheets.update_user_disclaimer_status(user.id, ConfirmationStatus.CANCELLED_NO_DISCLAIMER)
+        for job_name_suffix in [f"disclaimer_warning_{user.id}", f"cancel_request_{user.id}"]:
+            current_jobs = context.job_queue.get_jobs_by_name(job_name_suffix)
+            for job_item in current_jobs: job_item.schedule_removal() # שיניתי שם משתנה
+    return ConversationHandler.END
+
+# --- Webhook של Gumroad ---
 @flask_app.route('/webhook/gumroad', methods=['POST', 'GET'])
 def gumroad_webhook_route():
     global application_instance
     logger.info(f"--- GUMROAD WEBHOOK ENDPOINT HIT (METHOD: {request.method}) ---")
-    # ... (הלוגיקה של ה-webhook מגרסה #46, שכוללת טיפול ב-form data) ...
     raw_body = request.get_data(as_text=True)
-    logger.info(f"Request Raw Body (Webhook): {raw_body[:1000]}...") # רשום רק חלק מהגוף
+    logger.info(f"Request Raw Body (Webhook): {raw_body[:1000]}...")
     data_to_process = None
     if request.method == 'POST':
         content_type = request.headers.get('Content-Type', '').lower()
@@ -211,7 +338,7 @@ def gumroad_webhook_route():
             except Exception as e: logger.error(f"Error parsing Form data: {e}"); return "Error parsing Form data", 400
             logger.info(f"Received Gumroad POST Form data (converted to dict): {data_to_process}")
         else:
-            logger.warning(f"POST with unexpected Content-Type: {content_type}.")
+            logger.warning(f"POST with unexpected Content-Type: {content_type}. Raw body: {raw_body[:500]}")
             return "Unsupported Content-Type for POST", 415
 
         if data_to_process:
@@ -265,14 +392,13 @@ def gumroad_webhook_route():
 def health_check():
     return "OK", 200
 
-# --- משימות מתוזמנות עם APScheduler ---
+# --- משימות מתוזמנות ---
 def check_trials_and_reminders_job():
     global application_instance
     logger.info("APScheduler: Running check_trials_and_reminders_job.")
     if not (application_instance and application_instance.job_queue):
         logger.error("APScheduler: Telegram application_instance/job_queue not ready for trial checks.")
         return
-    # ... (הלוגיקה של check_trials_and_reminders_job מגרסה #42, עם הקריאה ל-job_queue עבור async_handle_user_removal) ...
     users_to_process = g_sheets.get_users_for_trial_reminder_or_removal()
     for item in users_to_process:
         action = item['action']
@@ -283,7 +409,6 @@ def check_trials_and_reminders_job():
         email = user_gs_data.get(g_sheets.COL_EMAIL)
         if action == 'send_trial_end_reminder':
             logger.info(f"APScheduler: Sending trial end reminder to user {user_id} (email: {email})")
-            # ... (הודעת התזכורת המלאה) ...
             reminder_text = (
                 f"היי, כאן צוות {config.CHANNEL_USERNAME or 'TradeCore VIP'} 👋\n\n"
                 f"שבוע הניסיון שלך בערוץ ״חדר vip -TradeCore״ עומד להסתיים.\n"
@@ -305,14 +430,12 @@ def check_trials_and_reminders_job():
                 chat_id=user_id, data={'user_id': user_id}, name=f"exec_removal_{user_id}"
             )
 
-
 def post_scheduled_content_job():
     global application_instance
     logger.info("APScheduler: Attempting to post scheduled content.")
     if not (application_instance and application_instance.job_queue):
         logger.error("APScheduler: Telegram application_instance/job_queue not ready for content posting.")
         return
-    # ... (הלוגיקה של post_scheduled_content_job מגרסה #42, עם הקריאה ל-job_queue עבור send_async_photo_message) ...
     selected_stock = random.choice(config.STOCK_SYMBOLS_LIST) if config.STOCK_SYMBOLS_LIST else None
     if not selected_stock:
         logger.warning("APScheduler: STOCK_SYMBOLS_LIST is empty. Cannot post content.")
@@ -331,7 +454,6 @@ def post_scheduled_content_job():
     except Exception as e:
         logger.error(f"APScheduler: Error in post_scheduled_content_job for {selected_stock}: {e}", exc_info=True)
 
-
 # --- פונקציית main ואתחול ---
 async def setup_bot_and_scheduler():
     global application_instance, scheduler
@@ -348,37 +470,31 @@ async def setup_bot_and_scheduler():
     builder = Application.builder().token(config.TELEGRAM_BOT_TOKEN)
     application_instance = builder.build()
 
-    # --- הפעל את ה-handler הפשוט לבדיקה ראשונית ---
-    application_instance.add_handler(CommandHandler("start", simple_start_command_for_full_bot))
-    logger.info("Added SIMPLIFIED /start handler for initial testing.")
+    # --- הפעל את ה-ConversationHandler המלא ---
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start_command)], # כאן הפונקציה המלאה
+        states={
+            AWAITING_EMAIL_AND_CONFIRMATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_email_and_confirmation)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel_conversation_command)],
+    )
+    application_instance.add_handler(conv_handler)
+    logger.info("Added FULL ConversationHandler for /start.")
     
-    # --- ה-ConversationHandler המלא (כרגע בהערה) ---
-    # conv_handler = ConversationHandler(
-    #     entry_points=[CommandHandler('start', start_command)], # כאן תהיה הפונקציה המלאה start_command
-    #     states={
-    #         AWAITING_EMAIL_AND_CONFIRMATION: [
-    #             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_email_and_confirmation)
-    #         ],
-    #     },
-    #     fallbacks=[CommandHandler('cancel', cancel_conversation_command)],
-    # )
-    # application_instance.add_handler(conv_handler)
-    # logger.info("Full ConversationHandler (currently commented out) would be added here.")
+    # --- ה-handler הפשוט שהיה לבדיקה - כעת בהערה ---
+    # application_instance.add_handler(CommandHandler("start", simple_start_command_for_full_bot))
+    # logger.info("SIMPLIFIED /start handler is currently COMMENTED OUT.")
 
-
-    # הוסף error handler כללי
     async def general_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-        logger.error("--- GENERAL EXCEPTION DURING UPDATE PROCESSING ---", exc_info=context.error)
-        # נסה להודיע למשתמש אם אפשר
+        logger.error("--- GENERAL EXCEPTION DURING UPDATE PROCESSING (symptoms handler) ---", exc_info=context.error)
         if isinstance(update, Update) and update.effective_message:
-            try: await update.effective_message.reply_text("אופס! אירעה שגיאה בעיבוד. אנא נסה שוב או פנה למנהל.")
+            try: await update.effective_message.reply_text("אופס! אירעה שגיאה. נסה שוב או פנה למנהל.")
             except Exception: pass
         elif isinstance(update, Update) and update.callback_query:
             try: await update.callback_query.answer("שגיאה בעיבוד.", show_alert=True)
             except Exception: pass
     application_instance.add_error_handler(general_error_handler)
     logger.info("Added general error handler.")
-
 
     if not scheduler.running:
         try:
@@ -441,60 +557,50 @@ def run_bot_logic_in_thread_target():
         if bot_started_successfully:
             logger.info("Bot and scheduler setup complete in thread. Main polling loop should be active.")
             while not bot_thread_event.is_set():
-                # Check if polling is still active, this is a bit indirect
                 if not (application_instance and application_instance.updater and application_instance.updater.running):
                     logger.warning("Updater polling seems to have stopped. Bot thread will exit.")
                     break
-                time.sleep(5) # Keep thread alive and periodically check
+                time.sleep(5)
             logger.info("Bot thread main loop finished or event was set.")
         else:
             logger.error("Bot and scheduler setup FAILED in thread. Thread will exit.")
-            
     except Exception as e:
         logger.critical(f"Unhandled exception in bot_thread's main execution: {e}", exc_info=True)
     finally:
         logger.info("Bot logic thread target function is finishing. Cleaning up...")
-        # Graceful shutdown attempt
         if application_instance:
             if application_instance.updater and application_instance.updater.running:
                 logger.info("Stopping PTB updater in thread finally block...")
-                loop.run_until_complete(application_instance.updater.stop())
+                try: loop.run_until_complete(application_instance.updater.stop())
+                except Exception as e_stop_updater : logger.error(f"Error stopping updater: {e_stop_updater}")
             if application_instance.running:
                  logger.info("Stopping PTB application in thread finally block...")
-                 loop.run_until_complete(application_instance.stop())
+                 try: loop.run_until_complete(application_instance.stop())
+                 except Exception as e_stop_app : logger.error(f"Error stopping application: {e_stop_app}")
         if scheduler.running:
-            scheduler.shutdown(wait=False) # wait=False as loop might be closing
+            scheduler.shutdown(wait=False)
             logger.info("APScheduler shutdown in thread.")
         if not loop.is_closed():
             loop.close()
             logger.info("Asyncio event loop closed in bot thread.")
 
-# --- קריאה לאתחול הבוט וה-Scheduler ---
-if __name__ != '__main__': # ירוץ כאשר Gunicorn מייבא את הקובץ
+if __name__ != '__main__':
     logger.info("Module bot.py imported by a WSGI server (e.g., Gunicorn).")
     logger.info("Attempting to start bot logic in a separate thread...")
-    # ודא שהלוגר מוגדר לפני ש-thread מתחיל להשתמש בו
-    if not bot_thread_event.is_set(): # התחל את ה-thread רק אם הוא לא כבר רץ או בתהליך עצירה
+    if not bot_thread_event.is_set():
         bot_main_thread = threading.Thread(target=run_bot_logic_in_thread_target, daemon=True, name="BotLogicThread")
         bot_main_thread.start()
         logger.info("BotLogicThread started.")
     else:
         logger.info("BotLogicThread event is already set or thread might be running; not starting new one.")
-
 elif __name__ == '__main__':
-    # הרצה מקומית לפיתוח (לא דרך Gunicorn)
     logger.info("Running bot.py directly for local development.")
-    # כאן אפשר להוסיף הרצה של Flask אם רוצים לבדוק גם Webhook מקומית
-    # flask_dev_thread = threading.Thread(target=lambda: flask_app.run(host='0.0.0.0', port=5001, debug=False, use_reloader=False), daemon=True)
-    # flask_dev_thread.start()
-    # logger.info("Flask development server (for webhook testing) started in a thread on port 5001.")
-    
     main_event_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(main_event_loop)
     try:
         if main_event_loop.run_until_complete(setup_bot_and_scheduler()):
             logger.info("Local bot setup complete. Polling should be active. Press Ctrl+C to exit.")
-            main_event_loop.run_forever() # Keep main thread alive for asyncio tasks
+            main_event_loop.run_forever()
         else:
             logger.error("Local bot setup failed.")
     except KeyboardInterrupt:
@@ -503,29 +609,24 @@ elif __name__ == '__main__':
         logger.critical(f"Critical error in local main execution: {e}", exc_info=True)
     finally:
         logger.info("Attempting graceful shutdown for local run...")
-        bot_thread_event.set() # Signal the bot thread to stop, if it's running
-
+        bot_thread_event.set()
         async def shutdown_local_async_components():
             if application_instance:
-                if application_instance.updater and application_instance.updater.running:
-                    await application_instance.updater.stop()
-                if application_instance.running:
-                    await application_instance.stop()
-                # await application_instance.shutdown() # Use for ApplicationBuilder persistence
-            if scheduler.running:
-                scheduler.shutdown(wait=True) # Wait for jobs to finish if possible
-        
+                if application_instance.updater and application_instance.updater.running: await application_instance.updater.stop()
+                if application_instance.running: await application_instance.stop()
+            if scheduler.running: scheduler.shutdown(wait=True)
         try:
-            shutdown_loop = asyncio.get_event_loop()
-            if shutdown_loop.is_running(): # Should be the main_event_loop
-                 # Schedule shutdown tasks on the existing loop
-                 tasks = asyncio.gather(shutdown_local_async_components(), return_exceptions=True)
-                 shutdown_loop.run_until_complete(tasks)
-            else: # Fallback if the loop isn't running (e.g., setup failed early)
+            loop = asyncio.get_event_loop() # This should get the main_event_loop
+            if loop.is_running():
+                # Schedule tasks on the existing running loop
+                gathered_shutdown_tasks = asyncio.gather(shutdown_local_async_components(), return_exceptions=True)
+                # Need to stop the loop after tasks are done
+                gathered_shutdown_tasks.add_done_callback(lambda _ : loop.stop())
+                # If run_forever was used, this might not be enough, may need loop.stop() called from elsewhere or rely on KeyboardInterrupt
+            else: # Fallback if no loop is running
                  asyncio.run(shutdown_local_async_components())
-        except RuntimeError: # No running loop, try a new one for shutdown
+        except RuntimeError: # No current event loop
              asyncio.run(shutdown_local_async_components())
         except Exception as e_shutdown:
             logger.error(f"Error during local async components shutdown: {e_shutdown}")
-
         logger.info("Local bot execution finished.")
