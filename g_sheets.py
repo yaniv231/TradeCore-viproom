@@ -106,25 +106,39 @@ def get_sheet():
         logger.error(f"An unexpected error occurred while connecting to Google Sheets: {e}", exc_info=True)
         return None
 
+# g_sheets.py
+# ... (שאר הייבואים והקוד למעלה) ...
+
 def find_user_row(sheet, user_id_to_find: int):
-    if not sheet: return None
+    if not sheet:
+        logger.error("find_user_row: sheet object is None.")
+        return None
     try:
         user_id_str_to_find = str(user_id_to_find)
-        headers = sheet.row_values(1)
-        if COL_USER_ID not in headers:
-            logger.error(f"Column '{COL_USER_ID}' not found in sheet header. Cannot find user.")
+        headers = sheet.row_values(1) # קרא כותרות כדי למצוא את אינדקס העמודה
+        if not headers:
+            logger.error("find_user_row: Sheet headers are missing.")
             return None
-        user_id_col_index = headers.index(COL_USER_ID) + 1
+        if COL_USER_ID not in headers:
+            logger.error(f"find_user_row: Column '{COL_USER_ID}' not found in sheet header.")
+            return None
         
-        # נסה למצוא עם batch get כדי להיות יעיל יותר אם הגיליון גדול מאוד
-        # אבל find פשוט יותר למימוש ראשוני
+        user_id_col_index = headers.index(COL_USER_ID) + 1 # gspread is 1-indexed
+        
         cell = sheet.find(user_id_str_to_find, in_column=user_id_col_index)
+        # אם sheet.find לא מוצא כלום, הוא אמור לזרוק gspread.exceptions.CellNotFound
+        # אם הוא מחזיר None במקום לזרוק חריגה (תלוי בגרסה/התנהגות), צריך לטפל גם בזה.
+        if cell is None: # בדיקה נוספת אם find יכול להחזיר None
+            return None
         return cell.row
-    except gspread.exceptions.CellNotFound:
+    except gspread.exceptions.CellNotFound: # <--- ודא שהשם כאן מדויק
+        logger.debug(f"User {user_id_to_find} not found in sheet (CellNotFound).")
         return None
     except Exception as e:
-        logger.error(f"Error finding user {user_id_to_find} in sheet: {e}")
+        logger.error(f"Error finding user {user_id_to_find} in sheet: {e}", exc_info=True)
         return None
+
+# ... (שאר הפונקציות בקובץ g_sheets.py) ...
 
 def get_user_data(user_id: int):
     sheet = get_sheet()
