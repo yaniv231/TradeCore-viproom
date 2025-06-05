@@ -39,86 +39,7 @@ flask_app = Flask(__name__)
 # אם יש פונקציות שהוגדרו כאן, ודא שגם להן יש גוף מוזח כראוי.
 
 # --- פונקציות הבוט של טלגרם ---
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user = update.effective_user
-    effective_username = user.username or user.first_name or f"User_{user.id}"
-    logger.info(f"--- FULL BOT: /start received by user {user.id} ({effective_username}) ---") # <--- לוג ראשון
 
-    try:
-        logger.info(f"--- FULL BOT: Step 1 - Checking existing user data for {user.id} ---")
-        user_gs_data = g_sheets.get_user_data(user.id) # קריאה ראשונה ל-Google Sheets
-        if user_gs_data is not None:
-            logger.info(f"--- FULL BOT: User {user.id} data found in GSheets. Confirmation: {user_gs_data.get(g_sheets.COL_CONFIRMATION_STATUS)}, Payment: {user_gs_data.get(g_sheets.COL_PAYMENT_STATUS)} ---")
-        else:
-            logger.info(f"--- FULL BOT: User {user.id} not found in GSheets or error fetching. ---")
-
-
-        # --- כאן מתחילה הלוגיקה המקורית שלך, עם תוספות לוג ---
-        if user_gs_data:
-            confirmation_status_str = user_gs_data.get(g_sheets.COL_CONFIRMATION_STATUS)
-            payment_status_str = user_gs_data.get(g_sheets.COL_PAYMENT_STATUS)
-            is_confirmed = confirmation_status_str == ConfirmationStatus.CONFIRMED_DISCLAIMER.value
-            is_trial_or_paid = payment_status_str in [PaymentStatus.TRIAL.value, PaymentStatus.PAID_SUBSCRIBER.value]
-
-            if is_confirmed and is_trial_or_paid:
-                logger.info(f"--- FULL BOT: User {user.id} is already registered and active. Sending reply. ---")
-                await update.message.reply_text("אתה כבר רשום ופעיל בערוץ! 😊")
-                logger.info(f"--- FULL BOT: 'Already registered' reply sent to {user.id}. Ending conversation. ---")
-                return ConversationHandler.END
-
-            elif confirmation_status_str in [ConfirmationStatus.PENDING_DISCLAIMER.value, ConfirmationStatus.WARNED_NO_DISCLAIMER.value]:
-                logger.info(f"--- FULL BOT: User {user.id} started but did not finish disclaimer. Prompting again. ---")
-                await update.message.reply_text(
-                    "נראה שהתחלת בתהליך ההרשמה אך לא סיימת.\n"
-                    "אנא שלח את כתובת האימייל שלך (לצורך תשלום עתידי ב-Gumroad) ואת המילה 'מאשר' או 'מקובל'.\n"
-                    "לדוגמה: `myemail@example.com מאשר`"
-                )
-                logger.info(f"--- FULL BOT: Re-prompt message sent to {user.id}. Returning AWAITING_EMAIL_AND_CONFIRMATION. ---")
-                return AWAITING_EMAIL_AND_CONFIRMATION
-
-        logger.info(f"--- FULL BOT: User {user.id} is new or needs to restart disclaimer. Preparing disclaimer message. ---")
-        today_str, trial_end_str = get_disclaimer_dates()
-        disclaimer_message = (
-            # ... (הודעת התנאים המקורית שלך) ...
-            f"היי, זה מצוות הערוץ ״חדר vip -TradeCore״\n\n"
-            f"המנוי שלך (לתקופת הניסיון) יתחיל עם אישור התנאים ויסתיים כעבור {config.TRIAL_PERIOD_DAYS} ימים.\n"
-            f"(לתשומת ליבך, אם תאשר היום {today_str}, הניסיון יסתיים בערך ב-{trial_end_str}).\n\n"
-            f"חשוב להבהיר: 🚫התוכן כאן אינו מהווה ייעוץ או המלצה פיננסית מכל סוג! "
-            f"📌 ההחלטות בסופו של דבר בידיים שלכם – איך לפעול, מתי להיכנס ומתי לצאת מהשוק.\n\n"
-            f"כדי להמשיך, אנא שלח את כתובת האימייל שלך (זו שתשמש לתשלום ב-Gumroad אם תבחר להמשיך) ולאחר מכן את המילה 'מאשר' או 'מקובל'.\n"
-            f"לדוגמה: `myemail@example.com מאשר`"
-        )
-        await update.message.reply_text(disclaimer_message)
-        logger.info(f"--- FULL BOT: Disclaimer message sent to {user.id}. ---")
-
-        logger.info(f"--- FULL BOT: Step 2 - Adding/updating user {user.id} in GSheets for disclaimer. ---")
-        add_success = g_sheets.add_new_user_for_disclaimer(user.id, effective_username)
-        logger.info(f"--- FULL BOT: g_sheets.add_new_user_for_disclaimer returned: {add_success} ---")
-        if not add_success and config.ADMIN_USER_ID and config.ADMIN_USER_ID != 0:
-            await context.bot.send_message(config.ADMIN_USER_ID, f"שגיאה בהוספת משתמש {user.id} ל-GSheets בשלב ההצהרה.")
-
-        logger.info(f"--- FULL BOT: Step 3 - Scheduling 24h warning job for {user.id}. ---")
-        job_name = f"disclaimer_warning_{user.id}"
-        current_jobs = context.job_queue.get_jobs_by_name(job_name)
-        for job in current_jobs:
-            job.schedule_removal()
-        context.job_queue.run_once(
-            disclaimer_24h_warning_job_callback,
-            datetime.timedelta(hours=config.REMINDER_MESSAGE_HOURS_BEFORE_WARNING),
-            chat_id=user.id,
-            name=job_name,
-            data={'user_id': user.id}
-        )
-        logger.info(f"--- FULL BOT: Scheduled 24h disclaimer warning for user {user.id}. Returning AWAITING_EMAIL_AND_CONFIRMATION. ---")
-        return AWAITING_EMAIL_AND_CONFIRMATION
-
-    except Exception as e:
-        logger.error(f"--- FULL BOT: EXCEPTION in start_command for user {user.id}: {e} ---", exc_info=True)
-        try:
-            await update.message.reply_text("מצטער, אירעה שגיאה פנימית בשרת. אנא נסה שוב מאוחר יותר או פנה למנהל.")
-        except Exception as e_reply_err:
-            logger.error(f"--- FULL BOT: Failed to send error reply to user {user.id}: {e_reply_err} ---")
-        return ConversationHandler.END # במקרה של שגיאה, סיים את השיחה
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """שולח הודעת פתיחה כאשר הפקודה /start מופעלת."""
     user = update.effective_user
@@ -176,37 +97,14 @@ def webhook():
     return 'OK', 200
 
 # --- פונקציה ראשית להפעלת הבוט ---
-async def simple_start_command_for_full_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user = update.effective_user
-    logger.info(f"--- FULL BOT (SIMPLIFIED HANDLER): /start received by user {user.id} ({user.username or user.first_name}) ---")
-    try:
-        await update.message.reply_text('FULL BOT (SIMPLIFIED HANDLER) responding to /start!')
-        logger.info(f"--- FULL BOT (SIMPLIFIED HANDLER): Reply sent to user {user.id} ---")
-    except Exception as e:
-        logger.error(f"--- FULL BOT (SIMPLIFIED HANDLER): Error sending reply to user {user.id}: {e} ---", exc_info=True)
+async def main() -> None:
+    """הפונקציה הראשית שמגדירה ומריצה את בוט הטלגרם."""
+    if TELEGRAM_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
+        logger.error("TELEGRAM_TOKEN is not configured. Please set your bot token.")
+        return
 
-async def general_error_handler_for_full_bot(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """רושם שגיאות שנגרמו על ידי עדכונים ומנסה להודיע למשתמש אם אפשר."""
-    logger.error("--- FULL BOT: Exception during update processing by dispatcher ---", exc_info=context.error)
-    if isinstance(update, Update) and update.effective_message:
-        try:
-            await update.effective_message.reply_text("אופס! משהו השתבש בעיבוד הבקשה. אנא נסה שוב מאוחר יותר או פנה למנהל.")
-        except Exception as e_reply:
-            logger.error(f"--- FULL BOT: Failed to send error reply message to user: {e_reply} ---")
-    elif isinstance(update, Update) and update.callback_query:
-         try:
-             await update.callback_query.answer("אופס! משהו השתבש בעיבוד הבקשה.", show_alert=True)
-             if update.effective_message: # נסה לשלוח גם הודעה אם אפשר
-                await update.effective_message.reply_text("אופס! משהו השתבש בעיבוד הבקשה. אנא נסה שוב מאוחר יותר או פנה למנהל.")
-         except Exception as e_cb_reply:
-             logger.error(f"--- FULL BOT: Failed to send error answer/reply to callback_query: {e_cb_reply} ---")
-
-
-application_instance.add_handler(CommandHandler("start", simple_start_command_for_full_bot))
-application_instance.add_error_handler(general_error_handler_for_full_bot) # חשוב מאוד!
-
-# ... (הקוד שמפעיל את ה-Scheduler וה-Polling נשאר כמו שהוא) ...
-
+    logger.info("Starting bot application...")
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
 
     # הוספת פקודות (Handlers)
     application.add_handler(CommandHandler("start", start))
