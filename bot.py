@@ -206,14 +206,7 @@ application_instance.add_handler(CommandHandler("start", simple_start_command_fo
 application_instance.add_error_handler(general_error_handler_for_full_bot) # חשוב מאוד!
 
 # ... (הקוד שמפעיל את ה-Scheduler וה-Polling נשאר כמו שהוא) ...
-async def main() -> None:
-    """הפונקציה הראשית שמגדירה ומריצה את בוט הטלגרם."""
-    if TELEGRAM_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
-        logger.error("TELEGRAM_TOKEN is not configured. Please set your bot token.")
-        return
 
-    logger.info("Starting bot application...")
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
 
     # הוספת פקודות (Handlers)
     application.add_handler(CommandHandler("start", start))
