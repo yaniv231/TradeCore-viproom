@@ -28,6 +28,11 @@ import graph_generator
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
+    logging.getLogger("telegram.ext.Application").setLevel(logging.DEBUG)
+logging.getLogger("telegram.ext.Updater").setLevel(logging.DEBUG)
+logging.getLogger("telegram.ext.Dispatcher").setLevel(logging.DEBUG)
+logging.getLogger("telegram.bot").setLevel(logging.DEBUG) # ייתן מידע על קריאות API לטלגרם
+logging.getLogger("httpx").setLevel(logging.DEBUG) # לספריית ה-HTTP שהיא משתמשת בה
 )
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("apscheduler").setLevel(logging.WARNING)
