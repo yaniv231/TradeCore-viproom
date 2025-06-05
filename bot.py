@@ -6,7 +6,7 @@ import threading
 import time
 import re
 import asyncio
-import pytz # ודא שהוא מותקן (ברשימת הדרישות)
+import pytz # ודא שהוא מותקן
 
 from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
@@ -29,7 +29,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
-# הגברת רמת לוגינג לספריות טלגרם לבדיקה אם עדיין יש בעיות קליטת הודעות
+# הגברת רמת לוגינג לספריות טלגרם לבדיקה
 logging.getLogger("telegram.ext.Application").setLevel(logging.DEBUG)
 logging.getLogger("telegram.ext.Updater").setLevel(logging.DEBUG)
 logging.getLogger("telegram.ext.Dispatcher").setLevel(logging.DEBUG)
@@ -40,11 +40,7 @@ logging.getLogger("apscheduler").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # --- משתנים גלובליים ל-ConversationHandler (מצבים) ---
-# השתמשנו בשם AWAITING_EMAIL_AND_CONFIRMATION בגרסה הקודמת
-# אם אתה מעדיף את השמות המקוריים, שנה אותם גם בהגדרת ה-ConversationHandler
-# ASK_EMAIL, WAITING_FOR_DISCLAIMER_CONFIRMATION = range(2)
-AWAITING_EMAIL_AND_CONFIRMATION = range(1) # כרגע יש רק מצב אחד פעיל אחרי הכניסה לשיחה
-
+AWAITING_EMAIL_AND_CONFIRMATION = range(1)
 
 application_instance: Application | None = None
 flask_app = Flask(__name__)
@@ -141,14 +137,12 @@ async def async_handle_user_removal(context: ContextTypes.DEFAULT_TYPE):
 #     except Exception as e:
 #         logger.error(f"--- FULL BOT (SIMPLIFIED HANDLER): Error sending reply to user {user.id}: {e} ---", exc_info=True)
 
-
 # --- ה-ConversationHandler המלא (מופעל כעת) ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     effective_username = user.username or user.first_name or f"User_{user.id}"
     logger.info(f"User {user.id} ({effective_username}) started the bot (full conv handler).")
     
-    # הוספת לוגינג מפורט בתחילת הפונקציה
     logger.debug(f"Context for user {user.id}: User data from context: {context.user_data}")
 
     user_gs_data = g_sheets.get_user_data(user.id)
@@ -201,22 +195,20 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     logger.info(f"Scheduling 24h warning job for {user.id}.")
     job_name = f"disclaimer_warning_{user.id}"
-    # הסר משימות קיימות עם אותו שם אם יש
     current_jobs = context.job_queue.get_jobs_by_name(job_name)
-    for job_item in current_jobs: # שיניתי את שם המשתנה כדי למנוע התנגשות עם job מה-callback
+    for job_item in current_jobs:
         job_item.schedule_removal()
         logger.info(f"Removed existing job: {job_name}")
         
     context.job_queue.run_once(
         disclaimer_24h_warning_job_callback,
         datetime.timedelta(hours=config.REMINDER_MESSAGE_HOURS_BEFORE_WARNING),
-        chat_id=user.id, # משמש ב-callback כדי לקבל את user_id
+        chat_id=user.id, 
         name=job_name,
-        data={'user_id': user.id} # העבר user_id במפורש
+        data={'user_id': user.id}
     )
     logger.info(f"Scheduled 24h disclaimer warning for user {user.id} with job name {job_name}. Returning AWAITING_EMAIL_AND_CONFIRMATION.")
     return AWAITING_EMAIL_AND_CONFIRMATION
-
 
 async def handle_email_and_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -260,7 +252,7 @@ async def disclaimer_24h_warning_job_callback(context: ContextTypes.DEFAULT_TYPE
     if not job or not job.data or 'user_id' not in job.data:
         logger.error(f"disclaimer_24h_warning_job_callback: Invalid job data: {job.data if job else 'No job'}")
         return
-    user_id = job.data['user_id'] # קבל את ה-user_id מה-data
+    user_id = job.data['user_id']
     logger.info(f"Running 24h disclaimer warning job callback for user {user_id}")
     user_gs_data = g_sheets.get_user_data(user_id)
 
@@ -277,13 +269,15 @@ async def disclaimer_24h_warning_job_callback(context: ContextTypes.DEFAULT_TYPE
         g_sheets.update_user_disclaimer_status(user_id, ConfirmationStatus.WARNED_NO_DISCLAIMER)
         logger.info(f"Sent final disclaimer warning to user {user_id}")
 
-        job_name_cancel = f"cancel_request_{user_id}"
+        job_name_cancel = f"cancel_request_{user.id}"
         current_cancel_jobs = context.job_queue.get_jobs_by_name(job_name_cancel)
         for c_job in current_cancel_jobs: c_job.schedule_removal()
         context.job_queue.run_once(
             cancel_request_job_callback,
             datetime.timedelta(hours=config.HOURS_FOR_FINAL_CONFIRMATION_AFTER_WARNING),
-            chat_id=user_id, name=job_name_cancel, data={'user_id': user_id} # העבר user_id
+            chat_id=user_id, 
+            name=job_name_cancel, 
+            data={'user_id': user_id} # ה-ID כאן הוא user_id מה-job data
         )
         logger.info(f"Scheduled final cancellation job for user {user_id} with job name {job_name_cancel}")
     else:
@@ -294,7 +288,7 @@ async def cancel_request_job_callback(context: ContextTypes.DEFAULT_TYPE):
     if not job or not job.data or 'user_id' not in job.data:
         logger.error(f"cancel_request_job_callback: Invalid job data: {job.data if job else 'No job'}")
         return
-    user_id = job.data['user_id'] # קבל את ה-user_id מה-data
+    user_id = job.data['user_id']
     logger.info(f"Running final cancellation job callback for user {user_id} (disclaimer)")
     user_gs_data = g_sheets.get_user_data(user_id)
     if user_gs_data and user_gs_data.get(g_sheets.COL_CONFIRMATION_STATUS) == ConfirmationStatus.WARNED_NO_DISCLAIMER.value:
@@ -316,7 +310,7 @@ async def cancel_conversation_command(update: Update, context: ContextTypes.DEFA
         g_sheets.update_user_disclaimer_status(user.id, ConfirmationStatus.CANCELLED_NO_DISCLAIMER)
         for job_name_suffix in [f"disclaimer_warning_{user.id}", f"cancel_request_{user.id}"]:
             current_jobs = context.job_queue.get_jobs_by_name(job_name_suffix)
-            for job_item in current_jobs: job_item.schedule_removal() # שיניתי שם משתנה
+            for job_item in current_jobs: job_item.schedule_removal()
     return ConversationHandler.END
 
 # --- Webhook של Gumroad ---
@@ -399,13 +393,19 @@ def check_trials_and_reminders_job():
     if not (application_instance and application_instance.job_queue):
         logger.error("APScheduler: Telegram application_instance/job_queue not ready for trial checks.")
         return
+
     users_to_process = g_sheets.get_users_for_trial_reminder_or_removal()
     for item in users_to_process:
         action = item['action']
         user_gs_data = item['data']
         user_id_str = user_gs_data.get(g_sheets.COL_USER_ID)
         if not user_id_str: continue
-        user_id = int(user_id_str)
+        try:
+            user_id = int(user_id_str)
+        except ValueError:
+            logger.warning(f"Invalid user_id '{user_id_str}' in GSheet for trial reminder/removal. Skipping.")
+            continue
+            
         email = user_gs_data.get(g_sheets.COL_EMAIL)
         if action == 'send_trial_end_reminder':
             logger.info(f"APScheduler: Sending trial end reminder to user {user_id} (email: {email})")
@@ -436,10 +436,12 @@ def post_scheduled_content_job():
     if not (application_instance and application_instance.job_queue):
         logger.error("APScheduler: Telegram application_instance/job_queue not ready for content posting.")
         return
+
     selected_stock = random.choice(config.STOCK_SYMBOLS_LIST) if config.STOCK_SYMBOLS_LIST else None
     if not selected_stock:
         logger.warning("APScheduler: STOCK_SYMBOLS_LIST is empty. Cannot post content.")
         return
+        
     logger.info(f"APScheduler: Selected stock {selected_stock} for posting.")
     try:
         image_stream, analysis_text = graph_generator.create_stock_graph_and_text(selected_stock)
@@ -472,7 +474,7 @@ async def setup_bot_and_scheduler():
 
     # --- הפעל את ה-ConversationHandler המלא ---
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start_command)], # כאן הפונקציה המלאה
+        entry_points=[CommandHandler('start', start_command)], # הפונקציה המלאה
         states={
             AWAITING_EMAIL_AND_CONFIRMATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_email_and_confirmation)],
         },
@@ -482,23 +484,30 @@ async def setup_bot_and_scheduler():
     logger.info("Added FULL ConversationHandler for /start.")
     
     # --- ה-handler הפשוט שהיה לבדיקה - כעת בהערה ---
+    # async def simple_start_command_for_full_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    #     # ... קוד הפונקציה ...
     # application_instance.add_handler(CommandHandler("start", simple_start_command_for_full_bot))
     # logger.info("SIMPLIFIED /start handler is currently COMMENTED OUT.")
 
     async def general_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-        logger.error("--- GENERAL EXCEPTION DURING UPDATE PROCESSING (symptoms handler) ---", exc_info=context.error)
-        if isinstance(update, Update) and update.effective_message:
-            try: await update.effective_message.reply_text("אופס! אירעה שגיאה. נסה שוב או פנה למנהל.")
-            except Exception: pass
-        elif isinstance(update, Update) and update.callback_query:
-            try: await update.callback_query.answer("שגיאה בעיבוד.", show_alert=True)
-            except Exception: pass
+        logger.error("--- GENERAL EXCEPTION DURING UPDATE PROCESSING ---", exc_info=context.error)
+        error_message_to_user = "אופס! אירעה שגיאה בעיבוד הבקשה. אנא נסה שוב מאוחר יותר או פנה למנהל."
+        if isinstance(update, Update):
+            if update.effective_message:
+                try: await update.effective_message.reply_text(error_message_to_user)
+                except Exception: pass
+            elif update.callback_query:
+                try: await update.callback_query.answer("שגיאה בעיבוד.", show_alert=True)
+                except Exception: pass
+                if update.effective_message: # נסה לשלוח גם הודעה אם אפשר
+                     try: await update.effective_message.reply_text(error_message_to_user)
+                     except Exception: pass
     application_instance.add_error_handler(general_error_handler)
     logger.info("Added general error handler.")
 
     if not scheduler.running:
         try:
-            scheduler.add_job(check_trials_and_reminders_job, 'cron', hour=9, minute=5, id="check_trials_job_v3", replace_existing=True, misfire_grace_time=3600)
+            scheduler.add_job(check_trials_and_reminders_job, 'cron', hour=9, minute=5, id="check_trials_job_v3_final", replace_existing=True, misfire_grace_time=3600)
             logger.info("APScheduler: Scheduled 'check_trials_and_reminders_job' daily at 09:05 (Asia/Jerusalem).")
 
             def schedule_daily_content_posts():
@@ -507,9 +516,9 @@ async def setup_bot_and_scheduler():
                     if job.id and job.id.startswith("daily_content_post_"):
                         try: scheduler.remove_job(job.id)
                         except Exception: pass
-                num_posts = random.randint(1, config.MAX_POSTS_PER_DAY)
-                logger.info(f"APScheduler: Scheduling {num_posts} content posts for today.")
-                for i in range(num_posts):
+                num_posts_today = random.randint(1, config.MAX_POSTS_PER_DAY)
+                logger.info(f"APScheduler: Scheduling {num_posts_today} content posts for today.")
+                for i in range(num_posts_today):
                     hour = random.randint(config.POSTING_SCHEDULE_HOURS_START, config.POSTING_SCHEDULE_HOURS_END -1 if config.POSTING_SCHEDULE_HOURS_END > config.POSTING_SCHEDULE_HOURS_START else config.POSTING_SCHEDULE_HOURS_START)
                     minute = random.randint(0, 59)
                     job_id = f"daily_content_post_{i}_{hour}_{minute}"
@@ -518,8 +527,8 @@ async def setup_bot_and_scheduler():
                         logger.info(f"APScheduler: Scheduled content post with ID {job_id} at {hour:02d}:{minute:02d}.")
                     except Exception as e_add_job: logger.error(f"APScheduler: Failed to add content job {job_id}: {e_add_job}")
             
-            schedule_daily_content_posts()
-            scheduler.add_job(schedule_daily_content_posts, 'cron', hour=0, minute=10, id="reschedule_content_job_v3", replace_existing=True, misfire_grace_time=3600)
+            schedule_daily_content_posts() # תזמן מיד עם עליית השרת
+            scheduler.add_job(schedule_daily_content_posts, 'cron', hour=0, minute=10, id="reschedule_content_job_v3_final", replace_existing=True, misfire_grace_time=3600) # ותזמן מחדש כל יום
             logger.info("APScheduler: Scheduled 'schedule_daily_content_posts' daily at 00:10 (Asia/Jerusalem).")
             
             scheduler.start()
@@ -544,6 +553,8 @@ async def setup_bot_and_scheduler():
         return True
     except Exception as e_telegram_start:
         logger.error(f"Failed to initialize or start Telegram bot: {e_telegram_start}", exc_info=True)
+        if isinstance(e_telegram_start, RuntimeError) and "cannot schedule new futures after shutdown" in str(e_telegram_start).lower():
+            logger.error("This might indicate an issue with the asyncio event loop already being closed or in a bad state.")
         return False
 
 def run_bot_logic_in_thread_target():
@@ -573,26 +584,40 @@ def run_bot_logic_in_thread_target():
                 logger.info("Stopping PTB updater in thread finally block...")
                 try: loop.run_until_complete(application_instance.updater.stop())
                 except Exception as e_stop_updater : logger.error(f"Error stopping updater: {e_stop_updater}")
-            if application_instance.running:
+            if application_instance.running: # For PTB v20+, application.running attribute
                  logger.info("Stopping PTB application in thread finally block...")
-                 try: loop.run_until_complete(application_instance.stop())
+                 try: loop.run_until_complete(application_instance.stop()) # stop() is for the dispatcher
                  except Exception as e_stop_app : logger.error(f"Error stopping application: {e_stop_app}")
         if scheduler.running:
             scheduler.shutdown(wait=False)
             logger.info("APScheduler shutdown in thread.")
-        if not loop.is_closed():
-            loop.close()
-            logger.info("Asyncio event loop closed in bot thread.")
+        
+        # ניסיון לסגור את הלולאה בצורה בטוחה יותר
+        try:
+            if not loop.is_closed():
+                # סגור את כל המשימות שעדיין רצות בלולאה לפני סגירת הלולאה
+                for task in asyncio.all_tasks(loop):
+                    if not task.done() and not task.cancelled():
+                        task.cancel()
+                # המתן לסיום המשימות (עם timeout)
+                # This might still be problematic if called from a non-async context or wrong thread for this loop
+                # loop.run_until_complete(asyncio.gather(*asyncio.all_tasks(loop), return_exceptions=True))
+                loop.close()
+                logger.info("Asyncio event loop closed in bot thread.")
+        except Exception as e_loop_close:
+            logger.error(f"Error closing asyncio loop in bot thread: {e_loop_close}")
+
 
 if __name__ != '__main__':
     logger.info("Module bot.py imported by a WSGI server (e.g., Gunicorn).")
     logger.info("Attempting to start bot logic in a separate thread...")
-    if not bot_thread_event.is_set():
+    if not bot_thread_event.is_set(): # מנע הרצה כפולה של ה-thread אם המודול מיובא מספר פעמים
         bot_main_thread = threading.Thread(target=run_bot_logic_in_thread_target, daemon=True, name="BotLogicThread")
         bot_main_thread.start()
         logger.info("BotLogicThread started.")
     else:
         logger.info("BotLogicThread event is already set or thread might be running; not starting new one.")
+
 elif __name__ == '__main__':
     logger.info("Running bot.py directly for local development.")
     main_event_loop = asyncio.new_event_loop()
@@ -609,24 +634,33 @@ elif __name__ == '__main__':
         logger.critical(f"Critical error in local main execution: {e}", exc_info=True)
     finally:
         logger.info("Attempting graceful shutdown for local run...")
-        bot_thread_event.set()
+        bot_thread_event.set() 
+        
         async def shutdown_local_async_components():
             if application_instance:
-                if application_instance.updater and application_instance.updater.running: await application_instance.updater.stop()
-                if application_instance.running: await application_instance.stop()
-            if scheduler.running: scheduler.shutdown(wait=True)
+                if application_instance.updater and application_instance.updater.running: 
+                    await application_instance.updater.stop()
+                if hasattr(application_instance, 'running') and application_instance.running: # בדיקה אם המאפיין קיים
+                    await application_instance.stop()
+                # await application_instance.shutdown() # This is more for ApplicationBuilder persistence
+            if scheduler.running: 
+                scheduler.shutdown(wait=True) # המתן לסיום משימות אם אפשר
+        
+        # נסה לקבל את הלולאה הרצה או להשתמש בלולאה הראשית אם היא עדיין קיימת
         try:
-            loop = asyncio.get_event_loop() # This should get the main_event_loop
-            if loop.is_running():
-                # Schedule tasks on the existing running loop
-                gathered_shutdown_tasks = asyncio.gather(shutdown_local_async_components(), return_exceptions=True)
-                # Need to stop the loop after tasks are done
-                gathered_shutdown_tasks.add_done_callback(lambda _ : loop.stop())
-                # If run_forever was used, this might not be enough, may need loop.stop() called from elsewhere or rely on KeyboardInterrupt
-            else: # Fallback if no loop is running
-                 asyncio.run(shutdown_local_async_components())
-        except RuntimeError: # No current event loop
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = main_event_loop # השתמש בלולאה שיצרנו אם אין אחת רצה
+
+        if current_loop and current_loop.is_running():
+            # Schedule tasks on the existing running loop
+            # Stop the loop first, then run shutdown tasks
+            current_loop.call_soon_threadsafe(current_loop.stop) # Stop run_forever
+            # Now run the shutdown tasks
+            current_loop.run_until_complete(shutdown_local_async_components())
+        else: # Fallback if no loop is running (e.g. if setup failed early)
              asyncio.run(shutdown_local_async_components())
-        except Exception as e_shutdown:
-            logger.error(f"Error during local async components shutdown: {e_shutdown}")
+        
+        if main_event_loop and not main_event_loop.is_closed():
+            main_event_loop.close()
         logger.info("Local bot execution finished.")
