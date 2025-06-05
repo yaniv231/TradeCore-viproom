@@ -176,6 +176,36 @@ def webhook():
     return 'OK', 200
 
 # --- פונקציה ראשית להפעלת הבוט ---
+async def simple_start_command_for_full_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    logger.info(f"--- FULL BOT (SIMPLIFIED HANDLER): /start received by user {user.id} ({user.username or user.first_name}) ---")
+    try:
+        await update.message.reply_text('FULL BOT (SIMPLIFIED HANDLER) responding to /start!')
+        logger.info(f"--- FULL BOT (SIMPLIFIED HANDLER): Reply sent to user {user.id} ---")
+    except Exception as e:
+        logger.error(f"--- FULL BOT (SIMPLIFIED HANDLER): Error sending reply to user {user.id}: {e} ---", exc_info=True)
+
+async def general_error_handler_for_full_bot(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """רושם שגיאות שנגרמו על ידי עדכונים ומנסה להודיע למשתמש אם אפשר."""
+    logger.error("--- FULL BOT: Exception during update processing by dispatcher ---", exc_info=context.error)
+    if isinstance(update, Update) and update.effective_message:
+        try:
+            await update.effective_message.reply_text("אופס! משהו השתבש בעיבוד הבקשה. אנא נסה שוב מאוחר יותר או פנה למנהל.")
+        except Exception as e_reply:
+            logger.error(f"--- FULL BOT: Failed to send error reply message to user: {e_reply} ---")
+    elif isinstance(update, Update) and update.callback_query:
+         try:
+             await update.callback_query.answer("אופס! משהו השתבש בעיבוד הבקשה.", show_alert=True)
+             if update.effective_message: # נסה לשלוח גם הודעה אם אפשר
+                await update.effective_message.reply_text("אופס! משהו השתבש בעיבוד הבקשה. אנא נסה שוב מאוחר יותר או פנה למנהל.")
+         except Exception as e_cb_reply:
+             logger.error(f"--- FULL BOT: Failed to send error answer/reply to callback_query: {e_cb_reply} ---")
+
+
+application_instance.add_handler(CommandHandler("start", simple_start_command_for_full_bot))
+application_instance.add_error_handler(general_error_handler_for_full_bot) # חשוב מאוד!
+
+# ... (הקוד שמפעיל את ה-Scheduler וה-Polling נשאר כמו שהוא) ...
 async def main() -> None:
     """הפונקציה הראשית שמגדירה ומריצה את בוט הטלגרם."""
     if TELEGRAM_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
