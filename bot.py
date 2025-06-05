@@ -25,18 +25,21 @@ import g_sheets
 from g_sheets import ConfirmationStatus, PaymentStatus
 import graph_generator
 
+
+# --- הגדרות לוגינג ---
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO)
-    logging.getLogger("telegram.ext.Application").setLevel(logging.DEBUG)
-logging.getLogger("telegram.ext.Updater").setLevel(logging.DEBUG)
-logging.getLogger("telegram.ext.Dispatcher").setLevel(logging.DEBUG)
-logging.getLogger("telegram.bot").setLevel(logging.DEBUG) # ייתן מידע על קריאות API לטלגרם
-logging.getLogger("httpx").setLevel(logging.DEBUG) # לספריית ה-HTTP שהיא משתמשת בה
+    level=logging.INFO  # ודא שהשורה הזו נראית כך, והפסיק שלפניה תקין אם יש פרמטרים נוספים לפני כן
 )
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("apscheduler").setLevel(logging.WARNING)
-logger = logging.getLogger(__name__)
+# שורות הלוגינג המפורט (ודא שהן מגיעות *אחרי* basicConfig):
+logging.getLogger("telegram.ext.Application").setLevel(logging.DEBUG) # אם החלטת להוסיף את זה
+logging.getLogger("telegram.ext.Updater").setLevel(logging.DEBUG)     # אם החלטת להוסיף את זה
+logging.getLogger("telegram.ext.Dispatcher").setLevel(logging.DEBUG)  # אם החלטת להוסיף את זה
+logging.getLogger("telegram.bot").setLevel(logging.DEBUG)         # אם החלטת להוסיף את זה
+logging.getLogger("httpx").setLevel(logging.DEBUG)                # אם החלטת להוסיף את זה
+
+logger = logging.getLogger(__name__) # הלוגר של הקוד שלך
+# ... (שאר הקוד שלך) ...
 
 AWAITING_EMAIL_AND_CONFIRMATION = range(1)
 
