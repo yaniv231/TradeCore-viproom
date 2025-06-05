@@ -5,7 +5,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # === הגדרות טלגרם ===
-TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+TELEGRAM_BOT_TOKEN = os.environ.get('7592108692:AAHBi0G7k53hUnmc1ypJx8YkuGmdFuOdL4I')
 if not TELEGRAM_BOT_TOKEN:
     logger.critical("CRITICAL: TELEGRAM_BOT_TOKEN environment variable is not set in Render!")
     # מומלץ לגרום לקריסה אם הטוקן לא מוגדר בסביבת פרודקשן
@@ -18,8 +18,8 @@ except ValueError:
     logger.error(f"ADMIN_USER_ID ('{ADMIN_USER_ID_STR}') is not a valid integer. Using 0 (admin commands may fail).")
     ADMIN_USER_ID = 0
 
-CHANNEL_ID = int(os.environ.get('CHANNEL_ID', '-100591679360')) # מזהה הערוץ שסיפקת
-CHANNEL_USERNAME = os.environ.get('CHANNEL_USERNAME', "@TradeCoreVIP") # שם תצוגה לערוץ (אם יש)
+CHANNEL_ID = int(os.environ.get('CHANNEL_ID', '591679360')) # מזהה הערוץ שסיפקת
+CHANNEL_USERNAME = os.environ.get('CHANNEL_USERNAME', "@TradeCore -vip room") # שם תצוגה לערוץ (אם יש)
 
 # === הגדרות Google Sheets ===
 # עדיפות לתוכן ה-JSON ממשתנה סביבה GSHEET_SERVICE_ACCOUNT_JSON_CONTENT ב-Render
