@@ -408,8 +408,38 @@ async def lifespan(app):
     logger.info("Shutdown tasks complete.")
 
 # יצירת אובייקט ה-ASGI הסופי ש-Gunicorn/Uvicorn יריץ
-asgi_app = WsgiToAsgi(flask_app)
-asgi_app.lifespan = lifespan
+)
+
+# ... (כל הקוד עד להגדרת lifespan) ...
+@contextlib.asynccontextmanager
+async def lifespan(app):
+    # ... (הפונקציה lifespan נשארת כפי שהיא) ...
+    logger.info("Lifespan event: STARTUP")
+    asyncio.create_task(main_bot_setup_and_run())
+    yield
+    logger.info("Lifespan event: SHUTDOWN")
+    # ... (שאר לוגיקת הכיבוי) ...
+
+# --- הוסף את הקוד הבא ---
+# מתאם WSGI -> ASGI עבור אפליקציית ה-Flask
+flask_asgi_app = WsgiToAsgi(flask_app)
+
+# יצירת אפליקציית ASGI ראשית שתשלב את הכל
+async def asgi_app(scope, receive, send):
+    """
+    זוהי אפליקציית ה-ASGI הראשית ש-Uvicorn יריץ.
+    היא מפעילה את מנגנון ה-lifespan, ומעבירה את בקשות ה-HTTP ל-Flask.
+    """
+    if scope['type'] == 'lifespan':
+        async with lifespan(flask_app):
+            await flask_asgi_app(scope, receive, send)
+    else:
+        await flask_asgi_app(scope, receive, send)
+
+# הרצה מקומית (לצורך פיתוח בלבד)
+if __name__ == "__main__":
+    logger.info("Running locally with Uvicorn server...")
+    uvicorn.run("bot:asgi_app", host="0.0.0.0", port=8000, reload=True)
 
 # הרצה מקומית (לצורך פיתוח בלבד)
 if __name__ == "__main__":
