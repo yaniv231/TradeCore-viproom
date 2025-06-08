@@ -92,19 +92,61 @@ class PeakTradeBot:
             logger.error(f"❌ Error checking user existence: {e}")
             return False
 
-    def get_dynamic_stock_recommendations(self):
-        """קבלת המלצות מניות דינמיות לפי שינויים משמעותיים"""
+    def get_mixed_stock_recommendations(self):
+        """קבלת המלצות מניות מעורבות - אמריקאיות וישראליות"""
         try:
-            popular_symbols = [
+            # מניות אמריקאיות פופולריות
+            us_symbols = [
                 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'NFLX', 
                 'AMD', 'INTC', 'IBM', 'CSCO', 'ORCL', 'CRM', 'ADBE', 'PYPL',
-                'UBER', 'LYFT', 'SPOT', 'ZOOM', 'SHOP', 'SQ', 'ROKU', 'TWTR',
+                'UBER', 'LYFT', 'SPOT', 'ZOOM', 'SHOP', 'SQ', 'ROKU',
                 'SNAP', 'PINS', 'DOCU', 'ZM', 'PLTR', 'COIN', 'RBLX', 'HOOD'
             ]
             
+            # מניות ישראליות הנסחרות בנאסד"ק
+            israeli_nasdaq_symbols = [
+                'CHKP',    # Check Point Software
+                'CYBR',    # CyberArk Software
+                'NICE',    # NICE Ltd
+                'MNDY',    # Monday.com
+                'WIX',     # Wix.com
+                'FVRR',    # Fiverr International
+                'TEVA',    # Teva Pharmaceutical
+                'CELG',    # Cellcom Israel
+                'PLTK',    # Playtika Holding
+                'SSYS',    # Stratasys
+                'NNDM',    # Nano Dimension
+                'RDWR',    # Radware
+                'MGIC',    # Magic Software
+                'GILT',    # Gilat Satellite Networks
+                'ELBM',    # Electra Battery Materials
+                'OPRX',    # OptimizeRx Corporation
+                'KRNT',    # Kornit Digital
+                'INMD',    # InMode
+                'SMWB',    # Similarweb
+                'SPNS'     # Sapiens International
+            ]
+            
+            # מניות ישראליות בת"א (עם סיומת .TA)
+            israeli_ta_symbols = [
+                'TEVA.TA',   # טבע
+                'ICL.TA',    # כימיקלים לישראל
+                'BANK.TA',   # בנק הפועלים
+                'LUMI.TA',   # אור אנרגיה
+                'ELCO.TA',   # אלקו
+                'AZRM.TA',   # עזריאלי
+                'DORL.TA',   # דורל
+                'ISCN.TA',   # ישקרון
+                'ALHE.TA',   # אלון הולדינגס
+                'MZTF.TA'    # מזרחי טפחות
+            ]
+            
+            # איחוד כל הרשימות
+            all_symbols = us_symbols + israeli_nasdaq_symbols + israeli_ta_symbols
+            
             recommendations = []
             
-            for symbol in popular_symbols:
+            for symbol in all_symbols:
                 try:
                     stock = yf.Ticker(symbol)
                     hist = stock.history(period='2d')
@@ -118,10 +160,19 @@ class PeakTradeBot:
                     
                     # הוספת מניה עם שינוי משמעותי (מעל 1.5%)
                     if abs(change_percent) > 1.5:
+                        # זיהוי סוג המניה
+                        if symbol in israeli_nasdaq_symbols:
+                            stock_type = "🇮🇱 ישראלית (נאסד\"ק)"
+                        elif symbol.endswith('.TA'):
+                            stock_type = "🇮🇱 ישראלית (ת\"א)"
+                        else:
+                            stock_type = "🇺🇸 אמריקאית"
+                            
                         recommendations.append({
                             'symbol': symbol,
                             'change_percent': change_percent,
-                            'current_price': close_today
+                            'current_price': close_today,
+                            'stock_type': stock_type
                         })
                         
                 except Exception as e:
@@ -131,16 +182,76 @@ class PeakTradeBot:
             # מיון לפי שינוי אחוזי (הגדול ביותר קודם)
             recommendations.sort(key=lambda x: abs(x['change_percent']), reverse=True)
             
-            # החזרת עד 8 המלצות מובילות
-            return recommendations[:8]
+            # החזרת עד 12 המלצות מובילות (מעורב)
+            return recommendations[:12]
             
         except Exception as e:
-            logger.error(f"❌ Error getting stock recommendations: {e}")
+            logger.error(f"❌ Error getting mixed stock recommendations: {e}")
             # fallback למניות קבועות
             return [
-                {'symbol': 'AAPL', 'change_percent': 0, 'current_price': 150},
-                {'symbol': 'MSFT', 'change_percent': 0, 'current_price': 300},
-                {'symbol': 'GOOGL', 'change_percent': 0, 'current_price': 2500}
+                {'symbol': 'AAPL', 'change_percent': 0, 'current_price': 150, 'stock_type': '🇺🇸 אמריקאית'},
+                {'symbol': 'CHKP', 'change_percent': 0, 'current_price': 120, 'stock_type': '🇮🇱 ישראלית (נאסד"ק)'},
+                {'symbol': 'TEVA.TA', 'change_percent': 0, 'current_price': 50, 'stock_type': '🇮🇱 ישראלית (ת"א)'}
+            ]
+
+    def get_crypto_recommendations(self):
+        """קבלת המלצות קריפטו מובילות"""
+        try:
+            crypto_symbols = [
+                'BTC-USD',   # Bitcoin
+                'ETH-USD',   # Ethereum
+                'SOL-USD',   # Solana
+                'XRP-USD',   # Ripple
+                'BNB-USD',   # Binance Coin
+                'ADA-USD',   # Cardano
+                'DOGE-USD',  # Dogecoin
+                'TRX-USD',   # Tron
+                'AVAX-USD',  # Avalanche
+                'DOT-USD',   # Polkadot
+                'MATIC-USD', # Polygon
+                'LINK-USD'   # Chainlink
+            ]
+            
+            recommendations = []
+            
+            for symbol in crypto_symbols:
+                try:
+                    crypto = yf.Ticker(symbol)
+                    hist = crypto.history(period='2d')
+                    
+                    if hist.empty or len(hist) < 2:
+                        continue
+                    
+                    close_today = hist['Close'][-1]
+                    close_yesterday = hist['Close'][-2]
+                    change_percent = ((close_today - close_yesterday) / close_yesterday) * 100
+                    
+                    # הוספת קריפטו עם שינוי משמעותי (מעל 2%)
+                    if abs(change_percent) > 2:
+                        recommendations.append({
+                            'symbol': symbol,
+                            'change_percent': change_percent,
+                            'current_price': close_today,
+                            'crypto_type': '🪙 קריפטו'
+                        })
+                        
+                except Exception as e:
+                    logger.error(f"Error processing crypto {symbol}: {e}")
+                    continue
+            
+            # מיון לפי שינוי אחוזי (הגדול ביותר קודם)
+            recommendations.sort(key=lambda x: abs(x['change_percent']), reverse=True)
+            
+            # החזרת עד 6 המלצות מובילות
+            return recommendations[:6]
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting crypto recommendations: {e}")
+            # fallback לקריפטו קבועים
+            return [
+                {'symbol': 'BTC-USD', 'change_percent': 0, 'current_price': 50000, 'crypto_type': '🪙 קריפטו'},
+                {'symbol': 'ETH-USD', 'change_percent': 0, 'current_price': 3000, 'crypto_type': '🪙 קריפטו'},
+                {'symbol': 'SOL-USD', 'change_percent': 0, 'current_price': 100, 'crypto_type': '🪙 קריפטו'}
             ]
 
     def create_advanced_chart_with_stoploss(self, symbol):
@@ -163,21 +274,21 @@ class PeakTradeBot:
             # יצירת גרף נרות עם mplfinance
             mpf.plot(data, type='candle', style='charles', 
                     title=f'{symbol} - 30 Days Candlestick Chart',
-                    ylabel='Price ($)',
+                    ylabel='Price',
                     ax=ax)
             
             # הוספת קו סטופלוס
             ax.axhline(stoploss, color='red', linestyle='--', linewidth=2, 
-                      label=f'Stop Loss: ${stoploss:.2f} (-2%)', alpha=0.8)
+                      label=f'Stop Loss: {stoploss:.2f} (-2%)', alpha=0.8)
             
             # הוספת קו מחיר נוכחי
             ax.axhline(last_close, color='yellow', linestyle='-', linewidth=1.5, 
-                      label=f'Current: ${last_close:.2f}', alpha=0.8)
+                      label=f'Current: {last_close:.2f}', alpha=0.8)
             
             # הוספת אזור רווח פוטנציאלי
             profit_target = last_close * 1.05  # 5% רווח
             ax.axhline(profit_target, color='green', linestyle=':', linewidth=1.5, 
-                      label=f'Target: ${profit_target:.2f} (+5%)', alpha=0.8)
+                      label=f'Target: {profit_target:.2f} (+5%)', alpha=0.8)
             
             ax.legend(loc='upper left')
             ax.grid(True, alpha=0.3)
@@ -233,7 +344,8 @@ class PeakTradeBot:
 📈 מה תקבל בערוץ PeakTrade VIP:
 • ניתוחים טכניים מתקדמים
 • גרפי נרות בזמן אמת עם סטופלוס מומלץ
-• המלצות מניות דינמיות יומיות
+• המלצות מניות דינמיות - אמריקאיות וישראליות
+• המלצות קריפטו מובילות
 • תוכן ייחודי ומקצועי
 
 ⏰ תקופת ניסיון: 7 ימים חינם
@@ -329,9 +441,10 @@ john.doe@gmail.com מאשר
 📅 מסתיים: {(datetime.now() + timedelta(days=7)).strftime("%d/%m/%Y")}
 
 🎯 מה תקבל בערוץ:
-• ניתוחים טכניים יומיים
+• 10 ניתוחים טכניים יומיים (מניות)
+• 3 המלצות קריפטו יומיות
 • גרפי נרות בזמן אמת עם סטופלוס
-• המלצות מניות דינמיות
+• המלצות אמריקאיות וישראליות
 • תובנות שוק ייחודיות
 
 💳 לפני סיום תקופת הניסיון תקבל הודעה עם אפשרות להמשיך כמנוי בתשלום.
@@ -436,10 +549,18 @@ john.doe@gmail.com מאשר
 ⏰ תקופת ניסיון: 7 ימים חינם
 💳 תשלום: דרך Gumroad (PayPal/כרטיס אשראי)
 
-🎯 מה תקבל:
-• המלצות מניות דינמיות יומיות
+🎯 מה תקבל (13 הודעות יומיות):
+• 10 המלצות מניות - אמריקאיות וישראליות
+• 3 המלצות קריפטו מובילות
 • גרפי נרות עם סטופלוס מומלץ
 • ניתוחים טכניים מתקדמים
+
+🇮🇱 מניות ישראליות כלולות:
+• נאסד"ק: Check Point, CyberArk, NICE, Monday.com
+• ת"א: טבע, כימיקלים לישראל, בנק הפועלים
+
+🪙 קריפטו כלול:
+• Bitcoin, Ethereum, Solana, Ripple, BNB, ועוד
 
 💬 תמיכה: פנה למנהל הערוץ"""
         
@@ -473,28 +594,40 @@ john.doe@gmail.com מאשר
         logger.info("✅ All handlers configured")
     
     def setup_scheduler(self):
-        """הגדרת תזמון משימות"""
+        """הגדרת תזמון משימות - 10 מניות + 3 קריפטו"""
         self.scheduler = AsyncIOScheduler()
         
+        # בדיקת תפוגת ניסיונות
         self.scheduler.add_job(
             self.check_trial_expiry,
             CronTrigger(hour=9, minute=0),
             id='check_trial_expiry'
         )
         
-        # משימות אקראיות לשליחת תוכן מתקדם (עד 8 ביום)
-        for i in range(8):
+        # 10 משימות מניות (ישראל+חו"ל)
+        for i in range(10):
             random_hour = random.randint(10, 22)
             random_minute = random.randint(0, 59)
             
             self.scheduler.add_job(
-                self.send_dynamic_content,
+                self.send_mixed_content,
                 CronTrigger(hour=random_hour, minute=random_minute),
-                id=f'content_{i}'
+                id=f'stock_content_{i}'
+            )
+        
+        # 3 משימות קריפטו
+        for i in range(3):
+            random_hour = random.randint(10, 22)
+            random_minute = random.randint(0, 59)
+            
+            self.scheduler.add_job(
+                self.send_crypto_content,
+                CronTrigger(hour=random_hour, minute=random_minute),
+                id=f'crypto_content_{i}'
             )
         
         self.scheduler.start()
-        logger.info("✅ Scheduler configured and started")
+        logger.info("✅ Scheduler configured: 10 stocks + 3 crypto daily")
     
     async def check_trial_expiry(self):
         """בדיקת תפוגת תקופות ניסיון"""
@@ -589,19 +722,20 @@ john.doe@gmail.com מאשר
         except Exception as e:
             logger.error(f"❌ Error handling trial expiry for {user_id}: {e}")
     
-    async def send_dynamic_content(self):
-        """שליחת תוכן דינמי עם המלצות מניות מתעדכנות"""
+    async def send_mixed_content(self):
+        """שליחת תוכן מעורב עם מניות אמריקאיות וישראליות"""
         try:
-            # קבלת המלצות מניות דינמיות
-            recommendations = self.get_dynamic_stock_recommendations()
+            # קבלת המלצות מניות מעורבות
+            recommendations = self.get_mixed_stock_recommendations()
             
             if not recommendations:
-                logger.warning("No stock recommendations available")
+                logger.warning("No mixed stock recommendations available")
                 return
             
             # בחירת מניה אקראית מההמלצות
             selected_stock = random.choice(recommendations)
             symbol = selected_stock['symbol']
+            stock_type = selected_stock['stock_type']
             
             # יצירת גרף מתקדם עם סטופלוס
             chart_buffer, stoploss = self.create_advanced_chart_with_stoploss(symbol)
@@ -613,7 +747,6 @@ john.doe@gmail.com מאשר
             # קבלת נתונים נוספים
             stock = yf.Ticker(symbol)
             data = stock.history(period="2d")
-            info = stock.info
             
             current_price = data['Close'][-1]
             change = data['Close'][-1] - data['Close'][-2] if len(data) > 1 else 0
@@ -624,8 +757,87 @@ john.doe@gmail.com מאשר
             profit_target = current_price * 1.05
             risk_reward = (profit_target - current_price) / (current_price - stoploss) if stoploss else 0
             
-            # יצירת טקסט מפורט
-            caption = f"""📈 {symbol} - ניתוח טכני מתקדם
+            # קביעת מטבע לפי סוג המניה
+            currency = "₪" if symbol.endswith('.TA') else "$"
+            
+            # יצירת טקסט מפורט עם זיהוי סוג המניה
+            caption = f"""{stock_type} 📈 {symbol} - ניתוח טכני מתקדם
+
+💰 מחיר נוכחי: {currency}{current_price:.2f}
+📊 שינוי יומי: {change:+.2f} ({change_percent:+.2f}%)
+📈 נפח מסחר: {volume:,.0f}
+
+🎯 המלצות מסחר:
+🔴 Stop Loss: {currency}{stoploss:.2f} (-2.0%)
+🟢 יעד רווח: {currency}{profit_target:.2f} (+5.0%)
+⚖️ יחס סיכון/תשואה: 1:{risk_reward:.1f}
+
+🔍 נקודות מפתח:
+• מגמה: {'עלייה חזקה' if change_percent > 3 else 'עלייה' if change_percent > 0 else 'ירידה'}
+• נפח: {'גבוה מהממוצע' if volume > 1000000 else 'נמוך מהממוצע'}
+• תנודתיות: {'גבוהה' if abs(change_percent) > 3 else 'בינונית'}
+
+💡 אסטרטגיה מומלצת:
+• כניסה: מעל {currency}{current_price:.2f}
+• סטופלוס: מתחת ל-{currency}{stoploss:.2f}
+• יעד: {currency}{profit_target:.2f}
+
+⚠️ זה לא ייעוץ השקעה - לצרכי חינוך בלבד
+
+#PeakTradeVIP #{symbol.replace('.TA', '')} #TechnicalAnalysis #Stocks"""
+            
+            # שליחה לערוץ
+            await self.application.bot.send_photo(
+                chat_id=CHANNEL_ID,
+                photo=chart_buffer,
+                caption=caption
+            )
+            
+            logger.info(f"✅ Stock content sent for {symbol} ({stock_type}) - Change: {change_percent:.2f}%")
+            
+        except Exception as e:
+            logger.error(f"❌ Error sending stock content: {e}")
+    
+    async def send_crypto_content(self):
+        """שליחת תוכן קריפטו עם גרף וסטופלוס"""
+        try:
+            # קבלת המלצות קריפטו
+            recommendations = self.get_crypto_recommendations()
+            
+            if not recommendations:
+                logger.warning("No crypto recommendations available")
+                return
+            
+            # בחירת קריפטו אקראי מההמלצות
+            selected_crypto = random.choice(recommendations)
+            symbol = selected_crypto['symbol']
+            crypto_type = selected_crypto['crypto_type']
+            
+            # יצירת גרף מתקדם עם סטופלוס
+            chart_buffer, stoploss = self.create_advanced_chart_with_stoploss(symbol)
+            
+            if not chart_buffer:
+                logger.error(f"Failed to create chart for {symbol}")
+                return
+            
+            # קבלת נתונים נוספים
+            crypto = yf.Ticker(symbol)
+            data = crypto.history(period="2d")
+            
+            current_price = data['Close'][-1]
+            change = data['Close'][-1] - data['Close'][-2] if len(data) > 1 else 0
+            change_percent = (change / data['Close'][-2] * 100) if len(data) > 1 and data['Close'][-2] != 0 else 0
+            volume = data['Volume'][-1] if len(data) > 0 else 0
+            
+            # חישוב יעד רווח
+            profit_target = current_price * 1.05
+            risk_reward = (profit_target - current_price) / (current_price - stoploss) if stoploss else 0
+            
+            # יצירת שם נקי לקריפטו
+            crypto_name = symbol.replace('-USD', '')
+            
+            # יצירת טקסט מפורט לקריפטו
+            caption = f"""{crypto_type} {crypto_name} - ניתוח טכני מתקדם
 
 💰 מחיר נוכחי: ${current_price:.2f}
 📊 שינוי יומי: {change:+.2f} ({change_percent:+.2f}%)
@@ -637,9 +849,9 @@ john.doe@gmail.com מאשר
 ⚖️ יחס סיכון/תשואה: 1:{risk_reward:.1f}
 
 🔍 נקודות מפתח:
-• מגמה: {'עלייה חזקה' if change_percent > 3 else 'עלייה' if change_percent > 0 else 'ירידה'}
-• נפח: {'גבוה מהממוצע' if volume > 1000000 else 'נמוך מהממוצע'}
-• תנודתיות: {'גבוהה' if abs(change_percent) > 3 else 'בינונית'}
+• מגמה: {'עלייה חזקה' if change_percent > 5 else 'עלייה' if change_percent > 0 else 'ירידה'}
+• נפח: {'גבוה מהממוצע' if volume > 100000 else 'נמוך מהממוצע'}
+• תנודתיות: {'גבוהה מאוד' if abs(change_percent) > 10 else 'גבוהה' if abs(change_percent) > 5 else 'בינונית'}
 
 💡 אסטרטגיה מומלצת:
 • כניסה: מעל ${current_price:.2f}
@@ -647,8 +859,9 @@ john.doe@gmail.com מאשר
 • יעד: ${profit_target:.2f}
 
 ⚠️ זה לא ייעוץ השקעה - לצרכי חינוך בלבד
+⚠️ קריפטו כרוך בסיכון גבוה במיוחד
 
-#PeakTradeVIP #{symbol} #TechnicalAnalysis"""
+#PeakTradeVIP #{crypto_name} #Crypto #TechnicalAnalysis"""
             
             # שליחה לערוץ
             await self.application.bot.send_photo(
@@ -657,10 +870,10 @@ john.doe@gmail.com מאשר
                 caption=caption
             )
             
-            logger.info(f"✅ Dynamic content sent for {symbol} (Change: {change_percent:.2f}%)")
+            logger.info(f"✅ Crypto content sent for {symbol} - Change: {change_percent:.2f}%")
             
         except Exception as e:
-            logger.error(f"❌ Error sending dynamic content: {e}")
+            logger.error(f"❌ Error sending crypto content: {e}")
     
     async def run(self):
         """הפעלת הבוט"""
@@ -676,6 +889,7 @@ john.doe@gmail.com מאשר
             await self.application.updater.start_polling()
             
             logger.info("✅ PeakTrade VIP Bot is running successfully!")
+            logger.info("📊 Daily content: 10 stocks + 3 crypto = 13 messages")
             
             while True:
                 await asyncio.sleep(1)
