@@ -1,9 +1,11 @@
 import logging
 import os
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 from telegram.error import TelegramError
 import asyncio
+import signal
+import sys
 
 # הגדרת לוגינג
 logging.basicConfig(
@@ -12,21 +14,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# משתני סביבה - הוסף את הערכים שלך כאן זמנית
+# משתני סביבה
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN') or "7592108692:AAHRNtKPAmveFp4nfv_tWvoMt8Cg0gIFJKE"
-"הכנס_כאן_את_הטוקן_שלך"
 CHANNEL_ID = os.getenv('CHANNEL_ID') or "-100591679360"
-
-CHANNEL_USERNAME = os.getenv("TradeCore -vip room") or "הכנס_כאן_את_שם_הערוץ"
-
-# בדיקה שהערכים קיימים
-if BOT_TOKEN == "הכנס_כאן_את_הטוקן_שלך":
-    logger.error("Please replace BOT_TOKEN with your actual bot token")
-    exit(1)
-
-if CHANNEL_ID == "הכנס_כאן_את_מזהה_הערוץ":
-    logger.error("Please replace CHANNEL_ID with your actual channel ID")
-    exit(1)
+CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME') or "my_channel_name"
 
 # מצבי השיחה
 WAITING_FOR_EMAIL = 1
@@ -126,7 +117,6 @@ class TelegramBot:
                 disable_web_page_preview=True
             )
             
-            # שמירת פרטי המשתמש (אופציונלי)
             logger.info(f"Created trial access for user {user.id} with email {email}")
             
             return ConversationHandler.END
@@ -134,7 +124,7 @@ class TelegramBot:
         except TelegramError as e:
             logger.error(f"Error creating invite link: {e}")
             await update.message.reply_text(
-                "❌ אירעה שגיאה ביצירת הקישור. אנא נסה שוב מאוחר יותר או פנה לתמיכה.",
+                "❌ אירעה שגיאה ביצירת הקישור. ודא שהבוט הוא אדמין בערוץ עם הרשאות ליצור קישורי הזמנה.",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -214,21 +204,50 @@ class TelegramBot:
         
         logger.info("Starting polling...")
         
-        # הפעלת הבוט
-        await self.application.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True
-        )
+        # הפעלת הבוט עם טיפול נכון ב-event loop
+        try:
+            await self.application.initialize()
+            await self.application.start()
+            await self.application.updater.start_polling(
+                allowed_updates=Update.ALL_TYPES,
+                drop_pending_updates=True
+            )
+            
+            # המתנה אינסופית
+            stop_signals = (signal.SIGTERM, signal.SIGINT)
+            for sig in stop_signals:
+                signal.signal(sig, lambda s, f: asyncio.create_task(self.shutdown()))
+            
+            logger.info("Bot is running. Press Ctrl+C to stop.")
+            
+            # המתנה אינסופית
+            while True:
+                await asyncio.sleep(1)
+                
+        except Exception as e:
+            logger.error(f"Error in bot execution: {e}")
+        finally:
+            await self.shutdown()
+    
+    async def shutdown(self):
+        """כיבוי נקי של הבוט"""
+        logger.info("Shutting down bot...")
+        if self.application:
+            await self.application.updater.stop()
+            await self.application.stop()
+            await self.application.shutdown()
 
-async def main():
+def main():
     """פונקציה ראשית"""
-    bot = TelegramBot()
-    await bot.run()
-
-if __name__ == '__main__':
     try:
-        asyncio.run(main())
+        bot = TelegramBot()
+        asyncio.run(bot.run())
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
         logger.error(f"Fatal error: {e}")
+    finally:
+        logger.info("Bot shutdown complete")
+
+if __name__ == '__main__':
+    main()
