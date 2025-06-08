@@ -3,7 +3,7 @@ import os
 import asyncio
 import json
 from datetime import datetime, timedelta
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 from telegram.error import TelegramError
 import gspread
@@ -23,12 +23,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# הגדרות המערכת - עם הפרטים החדשים שלך
+# הגדרות המערכת
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN') or "7619055199:AAEL28DJ-E1Xl7iEfdPqTXJ0in1Lps0VOtM"
 CHANNEL_ID = os.getenv('CHANNEL_ID') or "-1002886874719"
 GOOGLE_CREDENTIALS = os.getenv('GOOGLE_CREDENTIALS')
-SPREADSHEET_ID = os.getenv('SPREADSHEET_ID') or "הכנס_מזהה_גוגל_שיט"
-GUMROAD_WEBHOOK_SECRET = os.getenv('GUMROAD_WEBHOOK_SECRET') or "הכנס_סוד_webhook"
+SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
 
 # מצבי השיחה
 WAITING_FOR_EMAIL = 1
@@ -53,6 +52,23 @@ class PeakTradeBot:
                 creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
                 self.google_client = gspread.authorize(creds)
                 self.sheet = self.google_client.open_by_key(SPREADSHEET_ID).sheet1
+                
+                # וידוא שיש כותרות בגיליון
+                try:
+                    headers = self.sheet.row_values(1)
+                    if not headers:
+                        # הוספת כותרות אם הגיליון ריק
+                        header_row = [
+                            'telegram_user_id', 'telegram_username', 'email', 
+                            'disclaimer_sent_time', 'confirmation_status', 
+                            'trial_start_date', 'trial_end_date', 'payment_status',
+                            'gumroad_sale_id', 'gumroad_subscription_id', 'last_update_timestamp'
+                        ]
+                        self.sheet.append_row(header_row)
+                        logger.info("✅ Headers added to Google Sheets")
+                except Exception as e:
+                    logger.error(f"❌ Error checking headers: {e}")
+                
                 logger.info("✅ Google Sheets connected successfully")
             else:
                 logger.warning("⚠️ Google Sheets credentials not found")
@@ -62,7 +78,7 @@ class PeakTradeBot:
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """פקודת התחלה עם disclaimer"""
         user = update.effective_user
-        logger.info(f"User {user.id} ({user.username}) started Peaktrade_bot")
+        logger.info(f"User {user.id} ({user.username}) started PeakTrade bot")
         
         disclaimer_message = f"""
 🏔️ *PeakTrade VIP | הצהרת אחריות*
@@ -97,9 +113,7 @@ class PeakTradeBot:
             parse_mode='Markdown'
         )
         
-        # רישום שליחת disclaimer
         await self.log_disclaimer_sent(user)
-        
         return WAITING_FOR_EMAIL
     
     async def log_disclaimer_sent(self, user):
@@ -108,36 +122,23 @@ class PeakTradeBot:
             if not self.sheet:
                 return
                 
-            # בדיקה אם המשתמש כבר קיים
-            records = self.sheet.get_all_records()
-            existing_user = None
-            for i, record in enumerate(records):
-                if str(record.get('telegram_user_id')) == str(user.id):
-                    existing_user = i + 2  # +2 כי השורה הראשונה היא כותרות
-                    break
-            
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-            if existing_user:
-                # עדכון משתמש קיים
-                self.sheet.update_cell(existing_user, 4, current_time)  # disclaimer_sent_time
-            else:
-                # הוספת משתמש חדש
-                new_row = [
-                    user.id,
-                    user.username or "N/A",
-                    "",  # email - יתמלא בשלב הבא
-                    current_time,  # disclaimer_sent_time
-                    "pending",  # confirmation_status
-                    "",  # trial_start_date
-                    "",  # trial_end_date
-                    "trial_pending",  # payment_status
-                    "",  # gumroad_sale_id
-                    "",  # gumroad_subscription_id
-                    current_time  # last_update_timestamp
-                ]
-                self.sheet.append_row(new_row)
-                
+            # הוספת משתמש חדש תמיד (פשוט יותר ובטוח יותר)
+            new_row = [
+                user.id,
+                user.username or "N/A",
+                "",  # email - יתמלא בשלב הבא
+                current_time,  # disclaimer_sent_time
+                "pending",  # confirmation_status
+                "",  # trial_start_date
+                "",  # trial_end_date
+                "trial_pending",  # payment_status
+                "",  # gumroad_sale_id
+                "",  # gumroad_subscription_id
+                current_time  # last_update_timestamp
+            ]
+            self.sheet.append_row(new_row)
             logger.info(f"✅ Disclaimer logged for user {user.id}")
             
         except Exception as e:
@@ -150,7 +151,6 @@ class PeakTradeBot:
         
         logger.info(f"User {user.id} sent: {message_text}")
         
-        # בדיקה אם ההודעה מכילה "מאשר"
         if "מאשר" not in message_text:
             await update.message.reply_text(
                 "❌ אנא שלח את האימייל בפורמט הנכון:\n"
@@ -159,10 +159,8 @@ class PeakTradeBot:
             )
             return WAITING_FOR_EMAIL
         
-        # חילוץ האימייל
         email = message_text.replace("מאשר", "").strip()
         
-        # בדיקה בסיסית של פורמט האימייל
         if "@" not in email or "." not in email:
             await update.message.reply_text(
                 "❌ כתובת האימייל לא תקינה. אנא נסה שוב:\n"
@@ -171,17 +169,14 @@ class PeakTradeBot:
             )
             return WAITING_FOR_EMAIL
         
-        # הודעת עיבוד
         processing_msg = await update.message.reply_text(
             "⏳ מעבד את הרישום לתקופת ניסיון...",
             parse_mode='Markdown'
         )
         
         try:
-            # עדכון נתונים ב-Google Sheets
             await self.register_trial_user(user, email)
             
-            # יצירת קישור הזמנה לערוץ
             invite_link = await context.bot.create_chat_invite_link(
                 chat_id=CHANNEL_ID,
                 member_limit=1,
@@ -234,33 +229,55 @@ class PeakTradeBot:
             return ConversationHandler.END
     
     async def register_trial_user(self, user, email):
-        """רישום משתמש לתקופת ניסיון ב-Google Sheets"""
+        """רישום משתמש לתקופת ניסיון ב-Google Sheets - גרסה מתוקנת"""
         try:
             if not self.sheet:
                 raise Exception("Google Sheets not connected")
             
-            records = self.sheet.get_all_records()
-            user_row = None
-            
-            # חיפוש המשתמש
-            for i, record in enumerate(records):
-                if str(record.get('telegram_user_id')) == str(user.id):
-                    user_row = i + 2
-                    break
-            
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             trial_end = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
             
-            if user_row:
-                # עדכון משתמש קיים
-                self.sheet.update_cell(user_row, 3, email)  # email
-                self.sheet.update_cell(user_row, 5, "confirmed")  # confirmation_status
-                self.sheet.update_cell(user_row, 6, current_time)  # trial_start_date
-                self.sheet.update_cell(user_row, 7, trial_end)  # trial_end_date
-                self.sheet.update_cell(user_row, 8, "trial_active")  # payment_status
-                self.sheet.update_cell(user_row, 11, current_time)  # last_update_timestamp
-            else:
+            # קבלת כל הנתונים מהגיליון
+            all_values = self.sheet.get_all_values()
+            
+            # חיפוש המשתמש בנתונים
+            user_row = None
+            for i, row in enumerate(all_values):
+                if len(row) > 0 and str(row[0]) == str(user.id):
+                    user_row = i + 1  # +1 כי gspread מתחיל מ-1
+                    break
+            
+            if user_row and user_row > 1:  # ודא שזה לא שורת הכותרות
+                try:
+                    # עדכון בטוח עם בדיקות
+                    logger.info(f"Updating existing user at row {user_row}")
+                    
+                    # עדכון תא אחד בכל פעם עם בדיקת שגיאות
+                    updates = [
+                        (user_row, 3, email),  # email
+                        (user_row, 5, "confirmed"),  # confirmation_status
+                        (user_row, 6, current_time),  # trial_start_date
+                        (user_row, 7, trial_end),  # trial_end_date
+                        (user_row, 8, "trial_active"),  # payment_status
+                        (user_row, 11, current_time)  # last_update_timestamp
+                    ]
+                    
+                    for row, col, value in updates:
+                        try:
+                            self.sheet.update_cell(row, col, value)
+                        except Exception as update_error:
+                            logger.error(f"Error updating cell ({row}, {col}): {update_error}")
+                            # אם יש שגיאה בעדכון, נוסיף שורה חדשה במקום
+                            raise Exception("Update failed, will create new row")
+                    
+                except Exception as update_error:
+                    logger.warning(f"Failed to update existing row: {update_error}")
+                    # אם העדכון נכשל, נוסיף שורה חדשה
+                    user_row = None
+            
+            if not user_row:
                 # הוספת משתמש חדש
+                logger.info("Adding new user row")
                 new_row = [
                     user.id,
                     user.username or "N/A",
@@ -276,11 +293,11 @@ class PeakTradeBot:
                 ]
                 self.sheet.append_row(new_row)
             
-            logger.info(f"✅ User {user.id} registered for trial")
+            logger.info(f"✅ User {user.id} registered for trial successfully")
             
         except Exception as e:
             logger.error(f"❌ Error registering trial user: {e}")
-            raise
+            raise Exception(f"Google Sheets error: {str(e)}")
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """פקודת עזרה"""
@@ -315,7 +332,6 @@ class PeakTradeBot:
     
     def setup_handlers(self):
         """הגדרת handlers"""
-        # ConversationHandler לתהליך רישום
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler('start', self.start_command)],
             states={
@@ -341,7 +357,7 @@ class PeakTradeBot:
         # משימה יומית לבדיקת תשלומים ותקופות ניסיון
         self.scheduler.add_job(
             self.check_trial_expiry,
-            CronTrigger(hour=9, minute=0),  # כל יום ב-9:00
+            CronTrigger(hour=9, minute=0),
             id='check_trial_expiry'
         )
         
@@ -372,17 +388,18 @@ class PeakTradeBot:
                 if record.get('payment_status') == 'trial_active':
                     trial_end_str = record.get('trial_end_date')
                     if trial_end_str:
-                        trial_end = datetime.strptime(trial_end_str, "%Y-%m-%d %H:%M:%S")
-                        
-                        # אם תקופת הניסיון הסתיימה
-                        if current_time > trial_end:
-                            user_id = record.get('telegram_user_id')
-                            await self.handle_trial_expired(user_id, i + 2)
-                        
-                        # תזכורת יום לפני סיום
-                        elif (trial_end - current_time).days == 1:
-                            user_id = record.get('telegram_user_id')
-                            await self.send_payment_reminder(user_id)
+                        try:
+                            trial_end = datetime.strptime(trial_end_str, "%Y-%m-%d %H:%M:%S")
+                            
+                            if current_time > trial_end:
+                                user_id = record.get('telegram_user_id')
+                                await self.handle_trial_expired(user_id, i + 2)
+                            
+                            elif (trial_end - current_time).days == 1:
+                                user_id = record.get('telegram_user_id')
+                                await self.send_payment_reminder(user_id)
+                        except ValueError:
+                            logger.error(f"Invalid date format: {trial_end_str}")
             
             logger.info("✅ Trial expiry check completed")
             
@@ -423,18 +440,18 @@ class PeakTradeBot:
     async def handle_trial_expired(self, user_id, row_index):
         """טיפול במשתמש שתקופת הניסיון שלו הסתיימה"""
         try:
-            # הסרת המשתמש מהערוץ
             await self.application.bot.ban_chat_member(
                 chat_id=CHANNEL_ID,
                 user_id=user_id
             )
             
-            # עדכון סטטוס ב-Google Sheets
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self.sheet.update_cell(row_index, 8, "expired_no_payment")
-            self.sheet.update_cell(row_index, 11, current_time)
+            try:
+                self.sheet.update_cell(row_index, 8, "expired_no_payment")
+                self.sheet.update_cell(row_index, 11, current_time)
+            except Exception as update_error:
+                logger.error(f"Error updating expiry status: {update_error}")
             
-            # הודעה למשתמש
             expiry_message = """
 ⏰ *תקופת הניסיון הסתיימה*
 
@@ -460,18 +477,15 @@ class PeakTradeBot:
     async def send_random_content(self):
         """שליחת תוכן אקראי לערוץ"""
         try:
-            # רשימת סימולים פופולריים
             symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'NFLX']
             symbol = random.choice(symbols)
             
-            # הורדת נתונים
             stock = yf.Ticker(symbol)
             data = stock.history(period="30d")
             
             if data.empty:
                 return
             
-            # יצירת גרף נרות
             plt.style.use('dark_background')
             fig, ax = plt.subplots(figsize=(12, 8))
             
@@ -480,13 +494,11 @@ class PeakTradeBot:
                     ylabel='Price ($)',
                     ax=ax)
             
-            # שמירת הגרף כתמונה
             buffer = io.BytesIO()
             plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
             buffer.seek(0)
             plt.close()
             
-            # יצירת טקסט תיאורי
             current_price = data['Close'].iloc[-1]
             change = data['Close'].iloc[-1] - data['Close'].iloc[-2]
             change_percent = (change / data['Close'].iloc[-2]) * 100
@@ -506,7 +518,6 @@ class PeakTradeBot:
 #PeakTradeVIP #{symbol}
             """
             
-            # שליחה לערוץ
             await self.application.bot.send_photo(
                 chat_id=CHANNEL_ID,
                 photo=buffer,
@@ -521,15 +532,10 @@ class PeakTradeBot:
     
     async def run(self):
         """הפעלת הבוט"""
-        logger.info("🚀 Starting PeakTrade VIP Bot...")
+        logger.info("🚀 Starting PeakTrade VIP Bot (Background Worker)...")
         
-        # יצירת Application
         self.application = Application.builder().token(BOT_TOKEN).build()
-        
-        # הגדרת handlers
         self.setup_handlers()
-        
-        # הגדרת scheduler
         self.setup_scheduler()
         
         try:
@@ -539,7 +545,6 @@ class PeakTradeBot:
             
             logger.info("✅ PeakTrade VIP Bot is running successfully!")
             
-            # המתנה אינסופית
             while True:
                 await asyncio.sleep(1)
                 
@@ -553,7 +558,6 @@ class PeakTradeBot:
                 await self.application.stop()
                 await self.application.shutdown()
 
-# הפעלת הבוט
 if __name__ == "__main__":
     bot = PeakTradeBot()
     try:
@@ -562,3 +566,4 @@ if __name__ == "__main__":
         logger.info("Bot stopped by user")
     except Exception as e:
         logger.error(f"Fatal error: {e}")
+
