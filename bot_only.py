@@ -74,10 +74,151 @@ class PeakTradeBot:
         except Exception as e:
             logger.error(f"❌ Error setting up Google Sheets: {e}")
 
+    def check_user_exists(self, user_id):
+        """בדיקה אם משתמש כבר קיים ב-Google Sheets"""
+        try:
+            if not self.sheet:
+                return False
+            
+            records = self.sheet.get_all_records()
+            for record in records:
+                if str(record.get('telegram_user_id')) == str(user_id):
+                    # בדיקה אם המשתמש פעיל (trial_active או paid_subscriber)
+                    status = record.get('payment_status', '')
+                    if status in ['trial_active', 'paid_subscriber']:
+                        return True
+            return False
+        except Exception as e:
+            logger.error(f"❌ Error checking user existence: {e}")
+            return False
+
+    def get_dynamic_stock_recommendations(self):
+        """קבלת המלצות מניות דינמיות לפי שינויים משמעותיים"""
+        try:
+            popular_symbols = [
+                'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'NFLX', 
+                'AMD', 'INTC', 'IBM', 'CSCO', 'ORCL', 'CRM', 'ADBE', 'PYPL',
+                'UBER', 'LYFT', 'SPOT', 'ZOOM', 'SHOP', 'SQ', 'ROKU', 'TWTR',
+                'SNAP', 'PINS', 'DOCU', 'ZM', 'PLTR', 'COIN', 'RBLX', 'HOOD'
+            ]
+            
+            recommendations = []
+            
+            for symbol in popular_symbols:
+                try:
+                    stock = yf.Ticker(symbol)
+                    hist = stock.history(period='2d')
+                    
+                    if hist.empty or len(hist) < 2:
+                        continue
+                    
+                    close_today = hist['Close'][-1]
+                    close_yesterday = hist['Close'][-2]
+                    change_percent = ((close_today - close_yesterday) / close_yesterday) * 100
+                    
+                    # הוספת מניה עם שינוי משמעותי (מעל 1.5%)
+                    if abs(change_percent) > 1.5:
+                        recommendations.append({
+                            'symbol': symbol,
+                            'change_percent': change_percent,
+                            'current_price': close_today
+                        })
+                        
+                except Exception as e:
+                    logger.error(f"Error processing {symbol}: {e}")
+                    continue
+            
+            # מיון לפי שינוי אחוזי (הגדול ביותר קודם)
+            recommendations.sort(key=lambda x: abs(x['change_percent']), reverse=True)
+            
+            # החזרת עד 8 המלצות מובילות
+            return recommendations[:8]
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting stock recommendations: {e}")
+            # fallback למניות קבועות
+            return [
+                {'symbol': 'AAPL', 'change_percent': 0, 'current_price': 150},
+                {'symbol': 'MSFT', 'change_percent': 0, 'current_price': 300},
+                {'symbol': 'GOOGL', 'change_percent': 0, 'current_price': 2500}
+            ]
+
+    def create_advanced_chart_with_stoploss(self, symbol):
+        """יצירת גרף נרות מתקדם עם סטופלוס מומלץ"""
+        try:
+            stock = yf.Ticker(symbol)
+            data = stock.history(period="30d")
+            
+            if data.empty:
+                return None, None
+            
+            # חישוב סטופלוס - 2% מתחת למחיר סגירה אחרון
+            last_close = data['Close'][-1]
+            stoploss = last_close * 0.98
+            
+            # יצירת גרף נרות
+            plt.style.use('dark_background')
+            fig, ax = plt.subplots(figsize=(12, 8))
+            
+            # יצירת גרף נרות עם mplfinance
+            mpf.plot(data, type='candle', style='charles', 
+                    title=f'{symbol} - 30 Days Candlestick Chart',
+                    ylabel='Price ($)',
+                    ax=ax)
+            
+            # הוספת קו סטופלוס
+            ax.axhline(stoploss, color='red', linestyle='--', linewidth=2, 
+                      label=f'Stop Loss: ${stoploss:.2f} (-2%)', alpha=0.8)
+            
+            # הוספת קו מחיר נוכחי
+            ax.axhline(last_close, color='yellow', linestyle='-', linewidth=1.5, 
+                      label=f'Current: ${last_close:.2f}', alpha=0.8)
+            
+            # הוספת אזור רווח פוטנציאלי
+            profit_target = last_close * 1.05  # 5% רווח
+            ax.axhline(profit_target, color='green', linestyle=':', linewidth=1.5, 
+                      label=f'Target: ${profit_target:.2f} (+5%)', alpha=0.8)
+            
+            ax.legend(loc='upper left')
+            ax.grid(True, alpha=0.3)
+            
+            # שמירת הגרף כתמונה
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight', 
+                       facecolor='black', edgecolor='none')
+            buffer.seek(0)
+            plt.close()
+            
+            return buffer, stoploss
+            
+        except Exception as e:
+            logger.error(f"❌ Error creating chart for {symbol}: {e}")
+            return None, None
+
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """פקודת התחלה עם disclaimer"""
         user = update.effective_user
         logger.info(f"User {user.id} ({user.username}) started PeakTrade bot")
+        
+        # בדיקה אם המשתמש כבר קיים
+        if self.check_user_exists(user.id):
+            existing_user_message = f"""🔄 שלום {user.first_name}!
+
+נראה שאתה כבר רשום במערכת שלנו! 
+
+✅ הסטטוס שלך: פעיל בערוץ PeakTrade VIP
+
+🎯 מה תוכל לעשות:
+• להמשיך ליהנות מהתוכן הפרמיום
+• לקבל ניתוחים טכניים יומיים
+• לראות גרפי נרות בזמן אמת
+
+💬 יש שאלות? פנה למנהל הערוץ
+
+תודה שאתה חלק מקהילת PeakTrade VIP! 🚀"""
+            
+            await update.message.reply_text(existing_user_message)
+            return ConversationHandler.END
         
         disclaimer_message = f"""🏔️ PeakTrade VIP | הצהרת אחריות
 
@@ -91,8 +232,8 @@ class PeakTradeBot:
 
 📈 מה תקבל בערוץ PeakTrade VIP:
 • ניתוחים טכניים מתקדמים
-• גרפי נרות בזמן אמת
-• רעיונות מסחר ותובנות שוק
+• גרפי נרות בזמן אמת עם סטופלוס מומלץ
+• המלצות מניות דינמיות יומיות
 • תוכן ייחודי ומקצועי
 
 ⏰ תקופת ניסיון: 7 ימים חינם
@@ -174,7 +315,6 @@ john.doe@gmail.com מאשר
                 name=f"Trial_{user.id}_{email.split('@')[0]}"
             )
             
-            # הודעת הצלחה פשוטה ללא פורמט מיוחד
             success_message = f"""✅ ברוך הבא ל-PeakTrade VIP!
 
 📧 האימייל שלך: {email}
@@ -190,8 +330,8 @@ john.doe@gmail.com מאשר
 
 🎯 מה תקבל בערוץ:
 • ניתוחים טכניים יומיים
-• גרפי נרות בזמן אמת
-• רעיונות מסחר מקצועיים
+• גרפי נרות בזמן אמת עם סטופלוס
+• המלצות מניות דינמיות
 • תובנות שוק ייחודיות
 
 💳 לפני סיום תקופת הניסיון תקבל הודעה עם אפשרות להמשיך כמנוי בתשלום.
@@ -296,6 +436,11 @@ john.doe@gmail.com מאשר
 ⏰ תקופת ניסיון: 7 ימים חינם
 💳 תשלום: דרך Gumroad (PayPal/כרטיס אשראי)
 
+🎯 מה תקבל:
+• המלצות מניות דינמיות יומיות
+• גרפי נרות עם סטופלוס מומלץ
+• ניתוחים טכניים מתקדמים
+
 💬 תמיכה: פנה למנהל הערוץ"""
         
         await update.message.reply_text(help_text)
@@ -337,12 +482,13 @@ john.doe@gmail.com מאשר
             id='check_trial_expiry'
         )
         
-        for i in range(10):
+        # משימות אקראיות לשליחת תוכן מתקדם (עד 8 ביום)
+        for i in range(8):
             random_hour = random.randint(10, 22)
             random_minute = random.randint(0, 59)
             
             self.scheduler.add_job(
-                self.send_random_content,
+                self.send_dynamic_content,
                 CronTrigger(hour=random_hour, minute=random_minute),
                 id=f'content_{i}'
             )
@@ -443,58 +589,78 @@ john.doe@gmail.com מאשר
         except Exception as e:
             logger.error(f"❌ Error handling trial expiry for {user_id}: {e}")
     
-    async def send_random_content(self):
-        """שליחת תוכן אקראי לערוץ"""
+    async def send_dynamic_content(self):
+        """שליחת תוכן דינמי עם המלצות מניות מתעדכנות"""
         try:
-            symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'NFLX']
-            symbol = random.choice(symbols)
+            # קבלת המלצות מניות דינמיות
+            recommendations = self.get_dynamic_stock_recommendations()
             
-            stock = yf.Ticker(symbol)
-            data = stock.history(period="30d")
-            
-            if data.empty:
+            if not recommendations:
+                logger.warning("No stock recommendations available")
                 return
             
-            plt.style.use('dark_background')
-            fig, ax = plt.subplots(figsize=(12, 8))
+            # בחירת מניה אקראית מההמלצות
+            selected_stock = random.choice(recommendations)
+            symbol = selected_stock['symbol']
             
-            mpf.plot(data, type='candle', style='charles', 
-                    title=f'{symbol} - 30 Days Chart',
-                    ylabel='Price ($)',
-                    ax=ax)
+            # יצירת גרף מתקדם עם סטופלוס
+            chart_buffer, stoploss = self.create_advanced_chart_with_stoploss(symbol)
             
-            buffer = io.BytesIO()
-            plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight')
-            buffer.seek(0)
-            plt.close()
+            if not chart_buffer:
+                logger.error(f"Failed to create chart for {symbol}")
+                return
             
-            current_price = data['Close'].iloc[-1]
-            change = data['Close'].iloc[-1] - data['Close'].iloc[-2]
-            change_percent = (change / data['Close'].iloc[-2]) * 100
+            # קבלת נתונים נוספים
+            stock = yf.Ticker(symbol)
+            data = stock.history(period="2d")
+            info = stock.info
             
-            caption = f"""📈 {symbol} - ניתוח טכני
+            current_price = data['Close'][-1]
+            change = data['Close'][-1] - data['Close'][-2] if len(data) > 1 else 0
+            change_percent = (change / data['Close'][-2] * 100) if len(data) > 1 and data['Close'][-2] != 0 else 0
+            volume = data['Volume'][-1] if len(data) > 0 else 0
+            
+            # חישוב יעד רווח
+            profit_target = current_price * 1.05
+            risk_reward = (profit_target - current_price) / (current_price - stoploss) if stoploss else 0
+            
+            # יצירת טקסט מפורט
+            caption = f"""📈 {symbol} - ניתוח טכני מתקדם
 
 💰 מחיר נוכחי: ${current_price:.2f}
 📊 שינוי יומי: {change:+.2f} ({change_percent:+.2f}%)
+📈 נפח מסחר: {volume:,.0f}
 
-🔍 תובנות:
-• מגמה: {'עלייה' if change > 0 else 'ירידה'}
-• נפח מסחר: {'גבוה' if random.choice([True, False]) else 'נמוך'}
+🎯 המלצות מסחר:
+🔴 Stop Loss: ${stoploss:.2f} (-2.0%)
+🟢 יעד רווח: ${profit_target:.2f} (+5.0%)
+⚖️ יחס סיכון/תשואה: 1:{risk_reward:.1f}
 
-⚡ זה לא ייעוץ השקעה - לצרכי חינוך בלבד
+🔍 נקודות מפתח:
+• מגמה: {'עלייה חזקה' if change_percent > 3 else 'עלייה' if change_percent > 0 else 'ירידה'}
+• נפח: {'גבוה מהממוצע' if volume > 1000000 else 'נמוך מהממוצע'}
+• תנודתיות: {'גבוהה' if abs(change_percent) > 3 else 'בינונית'}
 
-#PeakTradeVIP #{symbol}"""
+💡 אסטרטגיה מומלצת:
+• כניסה: מעל ${current_price:.2f}
+• סטופלוס: מתחת ל-${stoploss:.2f}
+• יעד: ${profit_target:.2f}
+
+⚠️ זה לא ייעוץ השקעה - לצרכי חינוך בלבד
+
+#PeakTradeVIP #{symbol} #TechnicalAnalysis"""
             
+            # שליחה לערוץ
             await self.application.bot.send_photo(
                 chat_id=CHANNEL_ID,
-                photo=buffer,
+                photo=chart_buffer,
                 caption=caption
             )
             
-            logger.info(f"✅ Random content sent for {symbol}")
+            logger.info(f"✅ Dynamic content sent for {symbol} (Change: {change_percent:.2f}%)")
             
         except Exception as e:
-            logger.error(f"❌ Error sending random content: {e}")
+            logger.error(f"❌ Error sending dynamic content: {e}")
     
     async def run(self):
         """הפעלת הבוט"""
