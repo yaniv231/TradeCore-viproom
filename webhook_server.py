@@ -14,11 +14,10 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# הגדרות עם הפרטים החדשים שלך
+# הגדרות עם הפרטים שלך
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN') or "7619055199:AAEL28DJ-E1Xl7iEfdPqTXJ0in1Lps0VOtM"
 GOOGLE_CREDENTIALS = os.getenv('GOOGLE_CREDENTIALS')
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
-GUMROAD_WEBHOOK_SECRET = os.getenv('GUMROAD_WEBHOOK_SECRET')
 
 # חיבור ל-Google Sheets
 google_client = None
@@ -89,26 +88,25 @@ async def send_payment_confirmation(user_id):
         bot = Bot(token=BOT_TOKEN)
         
         confirmation_message = """
-✅ *תשלום אושר בהצלחה!*
+✅ תשלום אושר בהצלחה!
 
 🎉 ברוך הבא כמנוי קבוע ב-PeakTrade VIP!
 
-💎 *המנוי שלך כולל:*
+💎 המנוי שלך כולל:
 • גישה מלאה לכל התוכן הפרמיום
-• ניתוחים טכניים יומיים
+• 10 ניתוחים טכניים יומיים (מניות)
+• 3 המלצות קריפטו יומיות
 • גרפי נרות בזמן אמת
-• רעיונות מסחר מקצועיים
 • תמיכה אישית
 
-🔄 *המנוי שלך מתחדש אוטומטית*
+🔄 המנוי שלך מתחדש אוטומטית
 
-*תודה שהצטרפת למשפחת PeakTrade VIP! 🚀*
+תודה שהצטרפת למשפחת PeakTrade VIP! 🚀
         """
         
         await bot.send_message(
             chat_id=user_id,
-            text=confirmation_message,
-            parse_mode='Markdown'
+            text=confirmation_message
         )
         
         logger.info(f"✅ Payment confirmation sent to {user_id}")
@@ -119,7 +117,12 @@ async def send_payment_confirmation(user_id):
 @app.route('/health', methods=['GET'])
 def health_check():
     """בדיקת תקינות השרת"""
-    return jsonify({'status': 'healthy', 'bot': 'PeakTrade VIP'}), 200
+    return jsonify({'status': 'healthy', 'service': 'PeakTrade Webhook Server'}), 200
+
+@app.route('/', methods=['GET'])
+def home():
+    """דף בית"""
+    return jsonify({'message': 'PeakTrade Webhook Server is running!'}), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
