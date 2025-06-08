@@ -1,11 +1,11 @@
 import logging
 import os
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
 from telegram.error import TelegramError
 import asyncio
 import signal
-import sys
+from datetime import datetime, timedelta
 
 # הגדרת לוגינג
 logging.basicConfig(
@@ -14,13 +14,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# משתני סביבה
+# משתני סביבה - החלף בערכים שלך
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN') or "7592108692:AAHRNtKPAmveFp4nfv_tWvoMt8Cg0gIFJKE"
 CHANNEL_ID = os.getenv('CHANNEL_ID') or "-100591679360"
 CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME') or "my_channel_name"
 
 # מצבי השיחה
-WAITING_FOR_EMAIL = 1
+WAITING_FOR_CONFIRMATION = 1
 
 class TelegramBot:
     def __init__(self):
@@ -36,14 +36,14 @@ class TelegramBot:
 
 שלום {user.first_name}! 👋
 
-📧 *כדי להתחיל את תקופת הניסיון של 7 ימים:*
-אנא שלח את כתובת האימייל שלך בפורמט הבא:
-`your-email@example.com מאשר`
+🚀 *כדי להתחיל את תקופת הניסיון של 7 ימים:*
+אנא שלח אחת מהמילים הבאות:
 
-💡 *דוגמה:*
-`john@gmail.com מאשר`
+• `מאשר`
+• `מקבל`  
+• `מאושר`
 
-לאחר שתשלח את האימייל, אקבל אותך לערוץ הפרמיום שלנו! 🚀
+לאחר האישור, תקבל קישור לערוץ הפרמיום שלנו! 🎯
         """
         
         await update.message.reply_text(
@@ -51,64 +51,135 @@ class TelegramBot:
             parse_mode='Markdown'
         )
         
-        return WAITING_FOR_EMAIL
+        return WAITING_FOR_CONFIRMATION
     
-    async def handle_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """טיפול בהודעת האימייל"""
+    async def handle_confirmation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """טיפול בהודעת האישור"""
         user = update.effective_user
-        message_text = update.message.text.strip()
+        message_text = update.message.text.strip().lower()
         
         logger.info(f"User {user.id} sent: {message_text}")
         
-        # בדיקה אם ההודעה מכילה "מאשר"
-        if "מאשר" not in message_text:
+        # בדיקה אם ההודעה מכילה אחת ממילות האישור
+        confirmation_words = ["מאשר", "מקבל", "מאושר"]
+        if not any(word in message_text for word in confirmation_words):
             await update.message.reply_text(
-                "❌ אנא שלח את האימייל בפורמט הנכון:\n"
-                "`your-email@example.com מאשר`",
+                "❌ אנא שלח אחת ממילות האישור:\n\n"
+                "• `מאשר`\n"
+                "• `מקבל`\n"  
+                "• `מאושר`",
                 parse_mode='Markdown'
             )
-            return WAITING_FOR_EMAIL
-        
-        # חילוץ האימייל
-        email = message_text.replace("מאשר", "").strip()
-        
-        # בדיקה בסיסית של פורמט האימייל
-        if "@" not in email or "." not in email:
-            await update.message.reply_text(
-                "❌ כתובת האימייל לא נראית תקינה. אנא נסה שוב:\n"
-                "`your-email@example.com מאשר`",
-                parse_mode='Markdown'
-            )
-            return WAITING_FOR_EMAIL
+            return WAITING_FOR_CONFIRMATION
         
         try:
-            # יצירת קישור הזמנה לערוץ (7 ימים)
-            invite_link = await context.bot.create_chat_invite_link(
-                chat_id=CHANNEL_ID,
-                expire_date=None,  # ללא תפוגה
-                member_limit=1,    # משתמש אחד בלבד
-                name=f"Trial_{user.id}_{email.split('@')[0]}"
-            )
+            # בדיקה אם הבוט יכול לגשת לערוץ
+            try:
+                chat = await context.bot.get_chat(CHANNEL_ID)
+                logger.info(f"Channel info: {chat.title}, Type: {chat.type}")
+            except Exception as e:
+                logger.error(f"Cannot access channel: {e}")
+                await update.message.reply_text(
+                    "❌ הבוט לא יכול לגשת לערוץ. ודא שהבוט הוא חבר בערוץ.",
+                    parse_mode='Markdown'
+                )
+                return ConversationHandler.END
             
+            # בדיקה אם הבוט הוא אדמין
+            try:
+                bot_member = await context.bot.get_chat_member(CHANNEL_ID, context.bot.id)
+                logger.info(f"Bot status in channel: {bot_member.status}")
+                
+                if bot_member.status not in ['administrator', 'creator']:
+                    await update.message.reply_text(
+                        "❌ הבוט אינו אדמין בערוץ. אנא הוסף אותו כאדמין.",
+                        parse_mode='Markdown'
+                    )
+                    return ConversationHandler.END
+            except Exception as e:
+                logger.error(f"Cannot check bot admin status: {e}")
+            
+            # ניסיון ליצירת קישור הזמנה עם פרמטרים שונים
+            try:
+                # ניסיון ראשון - עם תפוגה של 7 ימים
+                expire_date = int((datetime.now() + timedelta(days=7)).timestamp())
+                invite_link = await context.bot.create_chat_invite_link(
+                    chat_id=CHANNEL_ID,
+                    expire_date=expire_date,
+                    member_limit=1,
+                    name=f"Trial_{user.id}_{user.username or 'user'}"
+                )
+            except Exception as e1:
+                logger.error(f"First attempt failed: {e1}")
+                try:
+                    # ניסיון שני - ללא תפוגה
+                    invite_link = await context.bot.create_chat_invite_link(
+                        chat_id=CHANNEL_ID,
+                        member_limit=1,
+                        name=f"Trial_{user.id}"
+                    )
+                except Exception as e2:
+                    logger.error(f"Second attempt failed: {e2}")
+                    try:
+                        # ניסיון שלישי - קישור פשוט ללא הגבלות
+                        invite_link = await context.bot.create_chat_invite_link(
+                            chat_id=CHANNEL_ID,
+                            name=f"User_{user.id}"
+                        )
+                    except Exception as e3:
+                        logger.error(f"All attempts failed: {e3}")
+                        
+                        # הודעת שגיאה מפורטת
+                        error_message = f"""
+❌ *לא ניתן ליצור קישור הזמנה*
+
+🔍 *בדיקות שנדרשות:*
+
+1️⃣ **ודא שהבוט הוא אדמין** בערוץ עם ההרשאות:
+   • Invite Users via Link ✅
+   • Add New Admins ✅
+
+2️⃣ **ודא שהערוץ הוא פרטי** (לא ציבורי)
+   • ערוצים ציבוריים לא תומכים בקישורי הזמנה מוגבלים
+
+3️⃣ **נסה להסיר ולהוסיף** את הבוט מחדש כאדמין
+
+👤 *פרטי המשתמש:*
+🆔 *מזהה:* `{user.id}`
+👤 *שם משתמש:* @{user.username or 'לא זמין'}
+📝 *הודעה:* `{message_text}`
+
+💬 *פנה לתמיכה עם הפרטים האלה לקבלת עזרה*
+                        """
+                        
+                        await update.message.reply_text(
+                            error_message,
+                            parse_mode='Markdown'
+                        )
+                        return ConversationHandler.END
+            
+            # אם הגענו לכאן - הקישור נוצר בהצלחה
             success_message = f"""
 ✅ *נרשמת בהצלחה לתקופת ניסיון!*
 
-📧 *האימייל שלך:* `{email}`
-👤 *שם משתמש:* @{user.username or 'לא זמין'}
+👤 *שם:* {user.first_name} {user.last_name or ''}
+👤 *משתמש:* @{user.username or 'לא זמין'}
 🆔 *מזהה:* `{user.id}`
+✅ *סטטוס:* אושר לתקופת ניסיון
 
-🔗 *קישור הצטרפות לערוץ הפרמיום:*
+🔗 *קישור לערוץ הפרמיום:*
 {invite_link.invite_link}
 
-⏰ *תקופת הניסיון:* 7 ימים מהיום
+⏰ *תקופת ניסיון:* 7 ימים
+📅 *מתחיל:* {datetime.now().strftime("%d/%m/%Y %H:%M")}
 
 🎯 *מה תקבל בערוץ:*
-• אנליזות מתקדמות
-• אותות מסחר
+• אותות מסחר בזמן אמת
+• ניתוחים טכניים מתקדמים
 • גרפים וחיזויים
 • תמיכה אישית
 
-*תהנה מתקופת הניסיון! 🚀*
+*ברוך הבא למשפחה! 🚀*
             """
             
             await update.message.reply_text(
@@ -117,14 +188,13 @@ class TelegramBot:
                 disable_web_page_preview=True
             )
             
-            logger.info(f"Created trial access for user {user.id} with email {email}")
-            
+            logger.info(f"Successfully created invite link for user {user.id} ({user.username})")
             return ConversationHandler.END
             
-        except TelegramError as e:
-            logger.error(f"Error creating invite link: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
             await update.message.reply_text(
-                "❌ אירעה שגיאה ביצירת הקישור. ודא שהבוט הוא אדמין בערוץ עם הרשאות ליצור קישורי הזמנה.",
+                f"❌ שגיאה לא צפויה: {str(e)}\n\nפנה לתמיכה עם הודעה זו.",
                 parse_mode='Markdown'
             )
             return ConversationHandler.END
@@ -146,9 +216,11 @@ class TelegramBot:
 /help - הצגת הודעת עזרה זו
 /cancel - ביטול תהליך נוכחי
 
-📧 *לרשמה לניסיון:*
-שלח את האימייל שלך בפורמט:
-`your-email@example.com מאשר`
+✅ *לרשמה לתקופת ניסיון:*
+שלח אחת ממילות האישור:
+• `מאשר`
+• `מקבל`
+• `מאושר`
 
 💬 *זקוק לעזרה נוספת?*
 פנה אלינו דרך הערוץ הראשי.
@@ -162,8 +234,8 @@ class TelegramBot:
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler('start', self.start_command)],
             states={
-                WAITING_FOR_EMAIL: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_email)
+                WAITING_FOR_CONFIRMATION: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_confirmation)
                 ],
             },
             fallbacks=[
@@ -237,17 +309,17 @@ class TelegramBot:
             await self.application.stop()
             await self.application.shutdown()
 
-def main():
+async def main():
     """פונקציה ראשית"""
+    bot = TelegramBot()
+    await bot.run()
+
+if __name__ == '__main__':
     try:
-        bot = TelegramBot()
-        asyncio.run(bot.run())
+        asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
         logger.error(f"Fatal error: {e}")
     finally:
         logger.info("Bot shutdown complete")
-
-if __name__ == '__main__':
-    main()
