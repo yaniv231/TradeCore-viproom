@@ -13,9 +13,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # משתני סביבה - הוסף את הערכים שלך כאן זמנית
-BOT_TOKEN = os.getenv('7592108692:AAFMyhtTSo-DD_dPakPIEDQdHz2xr_klzgk') or "הכנס_כאן_את_הטוקן_שלך"
-CHANNEL_ID = os.getenv('-100591679360') or "הכנס_כאן_את_מזהה_הערוץ"
-CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME') or "הכנס_כאן_את_שם_הערוץ"
+BOT_TOKEN = os.getenv(7592108692:AAFMyhtTSo-DD_dPakPIEDQdHz2xr_klzgk) or "הכנס_כאן_את_הטוקן_שלך"
+CHANNEL_ID = os.getenv(-100591679360) or "הכנס_כאן_את_מזהה_הערוץ"
+CHANNEL_USERNAME = os.getenv(TradeCore -vip room) or "הכנס_כאן_את_שם_הערוץ"
 
 # בדיקה שהערכים קיימים
 if BOT_TOKEN == "הכנס_כאן_את_הטוקן_שלך":
