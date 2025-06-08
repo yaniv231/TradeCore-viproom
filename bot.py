@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 # משתני סביבה - עם הערכים החדשים שלך
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN') or "7269747636:AAETblnIfIDN9kqH7vw8B6rdHVjM2_1ybrg"
-CHANNEL_ID = os.getenv('CHANNEL_ID') or "-100591679360"
+CHANNEL_ID = os.getenv('CHANNEL_ID') or "-1001591679360"
 CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME') or "my_trading_channel"
 
 # מצבי השיחה
