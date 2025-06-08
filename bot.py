@@ -15,7 +15,6 @@ import mplfinance as mpf
 import matplotlib.pyplot as plt
 import io
 import random
-import html
 
 # הגדרת לוגינג
 logging.basicConfig(
@@ -40,16 +39,6 @@ class PeakTradeBot:
         self.google_client = None
         self.sheet = None
         self.setup_google_sheets()
-    
-    def escape_markdown(self, text):
-        """הימנעות מתווים מיוחדים ב-Markdown"""
-        if not text:
-            return "N/A"
-        # החלפת תווים מיוחדים
-        escape_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
-        for char in escape_chars:
-            text = str(text).replace(char, f'\\{char}')
-        return text
         
     def setup_google_sheets(self):
         """הגדרת חיבור ל-Google Sheets"""
@@ -90,38 +79,33 @@ class PeakTradeBot:
         user = update.effective_user
         logger.info(f"User {user.id} ({user.username}) started PeakTrade bot")
         
-        disclaimer_message = f"""
-🏔️ <b>PeakTrade VIP | הצהרת אחריות</b>
+        disclaimer_message = f"""🏔️ PeakTrade VIP | הצהרת אחריות
 
-שלום {html.escape(user.first_name)}! 👋
+שלום {user.first_name}! 👋
 
-⚠️ <b>הצהרת ויתור אחריות:</b>
+⚠️ הצהרת ויתור אחריות:
 • המידע המוצג בערוץ הוא לצרכי חינוך בלבד
 • אין זו המלצה להשקעה או ייעוץ פיננסי
 • כל השקעה כרוכה בסיכון והפסדים אפשריים
 • אתה נושא באחריות המלאה להחלטותיך
 
-📈 <b>מה תקבל בערוץ PeakTrade VIP:</b>
+📈 מה תקבל בערוץ PeakTrade VIP:
 • ניתוחים טכניים מתקדמים
 • גרפי נרות בזמן אמת
 • רעיונות מסחר ותובנות שוק
 • תוכן ייחודי ומקצועי
 
-⏰ <b>תקופת ניסיון: 7 ימים חינם</b>
+⏰ תקופת ניסיון: 7 ימים חינם
 
-✅ <b>להמשך, אנא שלח את כתובת האימייל שלך בפורמט:</b>
-<code>your-email@example.com מאשר</code>
+✅ להמשך, אנא שלח את כתובת האימייל שלך בפורמט:
+your-email@example.com מאשר
 
-💡 <b>דוגמה:</b>
-<code>john.doe@gmail.com מאשר</code>
+💡 דוגמה:
+john.doe@gmail.com מאשר
 
-<i>חשוב: השתמש באותו אימייל לתשלום עתידי!</i>
-        """
+חשוב: השתמש באותו אימייל לתשלום עתידי!"""
         
-        await update.message.reply_text(
-            disclaimer_message,
-            parse_mode='HTML'
-        )
+        await update.message.reply_text(disclaimer_message)
         
         await self.log_disclaimer_sent(user)
         return WAITING_FOR_EMAIL
@@ -163,8 +147,7 @@ class PeakTradeBot:
         if "מאשר" not in message_text:
             await update.message.reply_text(
                 "❌ אנא שלח את האימייל בפורמט הנכון:\n"
-                "<code>your-email@example.com מאשר</code>",
-                parse_mode='HTML'
+                "your-email@example.com מאשר"
             )
             return WAITING_FOR_EMAIL
         
@@ -173,14 +156,12 @@ class PeakTradeBot:
         if "@" not in email or "." not in email:
             await update.message.reply_text(
                 "❌ כתובת האימייל לא תקינה. אנא נסה שוב:\n"
-                "<code>your-email@example.com מאשר</code>",
-                parse_mode='HTML'
+                "your-email@example.com מאשר"
             )
             return WAITING_FOR_EMAIL
         
         processing_msg = await update.message.reply_text(
-            "⏳ מעבד את הרישום לתקופת ניסיון...",
-            parse_mode='HTML'
+            "⏳ מעבד את הרישום לתקופת ניסיון..."
         )
         
         try:
@@ -193,35 +174,32 @@ class PeakTradeBot:
                 name=f"Trial_{user.id}_{email.split('@')[0]}"
             )
             
-            # הודעת הצלחה עם HTML במקום Markdown
-            success_message = f"""
-✅ <b>ברוך הבא ל-PeakTrade VIP!</b>
+            # הודעת הצלחה פשוטה ללא פורמט מיוחד
+            success_message = f"""✅ ברוך הבא ל-PeakTrade VIP!
 
-📧 <b>האימייל שלך:</b> <code>{html.escape(email)}</code>
-👤 <b>משתמש:</b> @{html.escape(user.username or 'לא זמין')}
-🆔 <b>מזהה:</b> <code>{user.id}</code>
+📧 האימייל שלך: {email}
+👤 משתמש: @{user.username or 'לא זמין'}
+🆔 מזהה: {user.id}
 
-🔗 <b>קישור הצטרפות לערוץ הפרמיום:</b>
+🔗 קישור הצטרפות לערוץ הפרמיום:
 {invite_link.invite_link}
 
-⏰ <b>תקופת ניסיון:</b> 7 ימים
-📅 <b>מתחיל:</b> {datetime.now().strftime("%d/%m/%Y")}
-📅 <b>מסתיים:</b> {(datetime.now() + timedelta(days=7)).strftime("%d/%m/%Y")}
+⏰ תקופת ניסיון: 7 ימים
+📅 מתחיל: {datetime.now().strftime("%d/%m/%Y")}
+📅 מסתיים: {(datetime.now() + timedelta(days=7)).strftime("%d/%m/%Y")}
 
-🎯 <b>מה תקבל בערוץ:</b>
+🎯 מה תקבל בערוץ:
 • ניתוחים טכניים יומיים
 • גרפי נרות בזמן אמת
 • רעיונות מסחר מקצועיים
 • תובנות שוק ייחודיות
 
-💳 <i>לפני סיום תקופת הניסיון תקבל הודעה עם אפשרות להמשיך כמנוי בתשלום.</i>
+💳 לפני סיום תקופת הניסיון תקבל הודעה עם אפשרות להמשיך כמנוי בתשלום.
 
-<b>לחץ על הקישור והצטרף עכשיו! 🚀</b>
-            """
+לחץ על הקישור והצטרף עכשיו! 🚀"""
             
             await processing_msg.edit_text(
                 success_message,
-                parse_mode='HTML',
                 disable_web_page_preview=True
             )
             
@@ -232,9 +210,8 @@ class PeakTradeBot:
             logger.error(f"❌ Error in trial registration: {e}")
             await processing_msg.edit_text(
                 f"❌ שגיאה ברישום לתקופת ניסיון\n\n"
-                f"פרטי השגיאה: <code>{html.escape(str(e))}</code>\n\n"
-                f"אנא פנה לתמיכה.",
-                parse_mode='HTML'
+                f"פרטי השגיאה: {str(e)}\n\n"
+                f"אנא פנה לתמיכה."
             )
             return ConversationHandler.END
     
@@ -304,32 +281,29 @@ class PeakTradeBot:
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """פקודת עזרה"""
-        help_text = """
-🆘 <b>PeakTrade VIP Bot - עזרה</b>
+        help_text = """🆘 PeakTrade VIP Bot - עזרה
 
-📋 <b>פקודות זמינות:</b>
+📋 פקודות זמינות:
 /start - התחלת תהליך רישום
 /help - הצגת עזרה זו
 
-✅ <b>איך להצטרף:</b>
+✅ איך להצטרף:
 1. שלח /start
 2. קרא את הצהרת האחריות
 3. שלח את האימייל שלך + "מאשר"
 4. קבל קישור לערוץ הפרמיום
 
-⏰ <b>תקופת ניסיון:</b> 7 ימים חינם
-💳 <b>תשלום:</b> דרך Gumroad (PayPal/כרטיס אשראי)
+⏰ תקופת ניסיון: 7 ימים חינם
+💳 תשלום: דרך Gumroad (PayPal/כרטיס אשראי)
 
-💬 <b>תמיכה:</b> פנה למנהל הערוץ
-        """
+💬 תמיכה: פנה למנהל הערוץ"""
         
-        await update.message.reply_text(help_text, parse_mode='HTML')
+        await update.message.reply_text(help_text)
     
     async def cancel_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """ביטול תהליך"""
         await update.message.reply_text(
-            "❌ התהליך בוטל. שלח /start כדי להתחיל מחדש.",
-            parse_mode='HTML'
+            "❌ התהליך בוטל. שלח /start כדי להתחיל מחדש."
         )
         return ConversationHandler.END
     
@@ -410,27 +384,24 @@ class PeakTradeBot:
     async def send_payment_reminder(self, user_id):
         """שליחת תזכורת תשלום"""
         try:
-            reminder_message = """
-⏰ <b>תזכורת: תקופת הניסיון מסתיימת מחר!</b>
+            reminder_message = """⏰ תזכורת: תקופת הניסיון מסתיימת מחר!
 
 היי! תקופת הניסיון של 7 ימים ב-PeakTrade VIP מסתיימת מחר.
 
-💎 <b>כדי להמשיך ליהנות מהתוכן הפרמיום:</b>
+💎 כדי להמשיך ליהנות מהתוכן הפרמיום:
 🔗 לחץ כאן לרכישת מנוי: [קישור Gumroad]
 
-💳 <b>תשלום מאובטח דרך:</b>
+💳 תשלום מאובטח דרך:
 • PayPal
 • כרטיס אשראי
 
-⚠️ <b>חשוב:</b> השתמש באותו אימייל שרשמת איתו!
+⚠️ חשוב: השתמש באותו אימייל שרשמת איתו!
 
-<i>תודה שאתה חלק מקהילת PeakTrade VIP! 🚀</i>
-            """
+תודה שאתה חלק מקהילת PeakTrade VIP! 🚀"""
             
             await self.application.bot.send_message(
                 chat_id=user_id,
-                text=reminder_message,
-                parse_mode='HTML'
+                text=reminder_message
             )
             
             logger.info(f"✅ Payment reminder sent to user {user_id}")
@@ -453,21 +424,18 @@ class PeakTradeBot:
             except Exception as update_error:
                 logger.error(f"Error updating expiry status: {update_error}")
             
-            expiry_message = """
-⏰ <b>תקופת הניסיון הסתיימה</b>
+            expiry_message = """⏰ תקופת הניסיון הסתיימה
 
 היי! תקופת הניסיון שלך ב-PeakTrade VIP הסתיימה.
 
-💎 <b>רוצה להמשיך ליהנות מהתוכן הפרמיום?</b>
+💎 רוצה להמשיך ליהנות מהתוכן הפרמיום?
 🔗 לחץ כאן לרכישת מנוי: [קישור Gumroad]
 
-<i>תודה שניסית את PeakTrade VIP! 🙏</i>
-            """
+תודה שניסית את PeakTrade VIP! 🙏"""
             
             await self.application.bot.send_message(
                 chat_id=user_id,
-                text=expiry_message,
-                parse_mode='HTML'
+                text=expiry_message
             )
             
             logger.info(f"✅ Trial expired handled for user {user_id}")
@@ -504,26 +472,23 @@ class PeakTradeBot:
             change = data['Close'].iloc[-1] - data['Close'].iloc[-2]
             change_percent = (change / data['Close'].iloc[-2]) * 100
             
-            caption = f"""
-📈 <b>{symbol} - ניתוח טכני</b>
+            caption = f"""📈 {symbol} - ניתוח טכני
 
-💰 <b>מחיר נוכחי:</b> ${current_price:.2f}
-📊 <b>שינוי יומי:</b> {change:+.2f} ({change_percent:+.2f}%)
+💰 מחיר נוכחי: ${current_price:.2f}
+📊 שינוי יומי: {change:+.2f} ({change_percent:+.2f}%)
 
-🔍 <b>תובנות:</b>
+🔍 תובנות:
 • מגמה: {'עלייה' if change > 0 else 'ירידה'}
 • נפח מסחר: {'גבוה' if random.choice([True, False]) else 'נמוך'}
 
-⚡ <i>זה לא ייעוץ השקעה - לצרכי חינוך בלבד</i>
+⚡ זה לא ייעוץ השקעה - לצרכי חינוך בלבד
 
-#PeakTradeVIP #{symbol}
-            """
+#PeakTradeVIP #{symbol}"""
             
             await self.application.bot.send_photo(
                 chat_id=CHANNEL_ID,
                 photo=buffer,
-                caption=caption,
-                parse_mode='HTML'
+                caption=caption
             )
             
             logger.info(f"✅ Random content sent for {symbol}")
