@@ -1,196 +1,230 @@
-# bot.py - גרסה פשוטה ועובדת לבוט טלגרם עם ConversationHandler
-
 import logging
-import datetime
-import re
 import os
-from telegram import Update, ReplyKeyboardRemove
-from telegram.ext import (
-    Application, CommandHandler, MessageHandler, filters,
-    ContextTypes, ConversationHandler
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
+from telegram.error import TelegramError
+import asyncio
 
-# הגדרות לוגינג
+# הגדרת לוגינג
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# קבועים
-AWAITING_EMAIL_AND_CONFIRMATION = 1
+# משתני סביבה
+BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+CHANNEL_ID = os.getenv('CHANNEL_ID')
+CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME')
 
-# משתני סביבה (חובה להגדיר ב-Render)
-TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
-CHANNEL_ID = int(os.environ.get('CHANNEL_ID', '-100591679360'))
-CHANNEL_USERNAME = os.environ.get('CHANNEL_USERNAME', 'TradeCore VIP')
-TRIAL_PERIOD_DAYS = 7
+# מצבי השיחה
+WAITING_FOR_EMAIL = 1
 
-if not TELEGRAM_BOT_TOKEN:
-    raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required!")
+class TelegramBot:
+    def __init__(self):
+        self.application = None
+        
+    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """פקודת התחלה"""
+        user = update.effective_user
+        logger.info(f"User {user.id} ({user.username}) started the bot")
+        
+        welcome_message = f"""
+🎉 *ברוכים הבאים לבוט הניסיון שלנו!*
 
-logger.info(f"Bot starting with token: {TELEGRAM_BOT_TOKEN[:10]}...")
+שלום {user.first_name}! 👋
 
-# פונקציות עזר
-def get_disclaimer_dates():
-    today = datetime.date.today()
-    trial_end_date = today + datetime.timedelta(days=TRIAL_PERIOD_DAYS)
-    return today.strftime("%d/%m/%Y"), trial_end_date.strftime("%d/%m/%Y")
+📧 *כדי להתחיל את תקופת הניסיון של 7 ימים:*
+אנא שלח את כתובת האימייל שלך בפורמט הבא:
+`your-email@example.com מאשר`
 
-async def send_invite_link_or_add_to_channel(context: ContextTypes.DEFAULT_TYPE, user_id: int, username: str):
-    """יוצר קישור הצטרפות לערוץ"""
-    try:
-        expire_date = datetime.datetime.now() + datetime.timedelta(days=TRIAL_PERIOD_DAYS + 2)
-        invite_link = await context.bot.create_chat_invite_link(
-            chat_id=CHANNEL_ID,
-            name=f"Trial for {username}",
-            expire_date=expire_date,
-            member_limit=1
-        )
-        
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=(
-                f"✅ ברוך הבא!\n"
-                f"הנך מועבר לתקופת ניסיון של {TRIAL_PERIOD_DAYS} ימים.\n"
-                f"לחץ כאן כדי להצטרף לערוץ: {invite_link.invite_link}"
-            )
-        )
-        logger.info(f"Sent invite link to user {user_id} ({username})")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Could not create invite link for user {user_id}: {e}")
-        await context.bot.send_message(
-            user_id, 
-            "אירעה שגיאה ביצירת קישור ההצטרפות. אנא פנה למנהל."
-        )
-        return False
+💡 *דוגמה:*
+`john@gmail.com מאשר`
 
-# ConversationHandler handlers
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """פונקציית התחלה - מציגה את ההסבר ומבקשת אימייל ואישור"""
-    user = update.effective_user
-    effective_username = user.username or user.first_name or f"User_{user.id}"
-    
-    logger.info(f"User {user.id} ({effective_username}) started the bot.")
-    
-    today_str, trial_end_str = get_disclaimer_dates()
-    
-    disclaimer_message = (
-        f"🔥 ברוכים הבאים לערוץ TradeCore VIP! 🔥\n\n"
-        f"📈 המנוי שלך (לתקופת הניסיון) יתחיל עם אישור התנאים ויסתיים כעבור {TRIAL_PERIOD_DAYS} ימים.\n"
-        f"📅 אם תאשר היום ({today_str}), הניסיון יסתיים ב-{trial_end_str}\n\n"
-        f"⚠️ חשוב להבהיר: התוכן כאן אינו מהווה ייעוץ או המלצה פיננסית!\n"
-        f"💡 ההחלטות בסופו של דבר בידיים שלכם.\n\n"
-        f"📧 כדי להמשיך, אנא שלח:\n"
-        f"1️⃣ את כתובת האימייל שלך\n"
-        f"2️⃣ את המילה 'מאשר'\n\n"
-        f"📝 דוגמה: myemail@example.com מאשר"
-    )
-    
-    await update.message.reply_text(disclaimer_message)
-    
-    return AWAITING_EMAIL_AND_CONFIRMATION
-
-async def handle_email_and_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """מטפל בהודעה שמכילה אימייל ואישור"""
-    user = update.effective_user
-    text = update.message.text.strip()
-    effective_username = user.username or user.first_name or f"User_{user.id}"
-    
-    logger.info(f"User {user.id} sent: {text}")
-    
-    # חיפוש אימייל בטקסט
-    email_match = re.search(r"[\w\.-]+@[\w\.-]+\.\w+", text)
-    
-    # חיפוש מילות אישור
-    confirmation_keywords = ["מאשר", "מקובל", "אישור", "ok", "yes", "כן", "אני מאשר"]
-    text_lower = text.lower()
-    confirmation_keyword_found = any(keyword in text_lower for keyword in confirmation_keywords)
-    
-    if email_match and confirmation_keyword_found:
-        email = email_match.group(0).lower()
+לאחר שתשלח את האימייל, אקבל אותך לערוץ הפרמיום שלנו! 🚀
+        """
         
-        logger.info(f"User {user.id} provided email {email} and confirmed")
-        
-        # כאן תוכל להוסיף שמירה ל-Google Sheets או DB
-        # לעת עתה נשלח רק הודעת הצלחה
-        
-        await update.message.reply_text("✅ תודה! מעבד את הבקשה...")
-        
-        # שליחת קישור לערוץ
-        success = await send_invite_link_or_add_to_channel(context, user.id, effective_username)
-        
-        if success:
-            await update.message.reply_text(
-                f"🎉 הצלחת! ההרשמה הושלמה.\n"
-                f"תיהנה מתקופת הניסיון של {TRIAL_PERIOD_DAYS} ימים!"
-            )
-        
-        return ConversationHandler.END
-        
-    else:
         await update.message.reply_text(
-            "❌ לא זיהיתי אימייל תקין ואישור.\n\n"
-            "אנא שלח שוב בפורמט:\n"
-            "📧 כתובת@אימייל.קום מאשר\n\n"
-            "דוגמה: user@gmail.com מאשר"
+            welcome_message,
+            parse_mode='Markdown'
         )
-        return AWAITING_EMAIL_AND_CONFIRMATION
-
-async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """מבטל את השיחה"""
-    await update.message.reply_text(
-        '❌ תהליך ההרשמה בוטל.\n'
-        'תוכל להתחיל מחדש עם /start',
-        reply_markup=ReplyKeyboardRemove()
-    )
-    return ConversationHandler.END
-
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """מטפל בשגיאות כלליות"""
-    logger.error("Exception during update processing:", exc_info=context.error)
+        
+        return WAITING_FOR_EMAIL
     
-    if isinstance(update, Update) and update.effective_message:
-        try:
-            await update.effective_message.reply_text(
-                "אופס! אירעה שגיאה. נסה שוב או פנה למנהל."
+    async def handle_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """טיפול בהודעת האימייל"""
+        user = update.effective_user
+        message_text = update.message.text.strip()
+        
+        logger.info(f"User {user.id} sent: {message_text}")
+        
+        # בדיקה אם ההודעה מכילה "מאשר"
+        if "מאשר" not in message_text:
+            await update.message.reply_text(
+                "❌ אנא שלח את האימייל בפורמט הנכון:\n"
+                "`your-email@example.com מאשר`",
+                parse_mode='Markdown'
             )
-        except Exception:
-            pass
+            return WAITING_FOR_EMAIL
+        
+        # חילוץ האימייל
+        email = message_text.replace("מאשר", "").strip()
+        
+        # בדיקה בסיסית של פורמט האימייל
+        if "@" not in email or "." not in email:
+            await update.message.reply_text(
+                "❌ כתובת האימייל לא נראית תקינה. אנא נסה שוב:\n"
+                "`your-email@example.com מאשר`",
+                parse_mode='Markdown'
+            )
+            return WAITING_FOR_EMAIL
+        
+        try:
+            # יצירת קישור הזמנה לערוץ (7 ימים)
+            invite_link = await context.bot.create_chat_invite_link(
+                chat_id=CHANNEL_ID,
+                expire_date=None,  # ללא תפוגה
+                member_limit=1,    # משתמש אחד בלבד
+                name=f"Trial_{user.id}_{email.split('@')[0]}"
+            )
+            
+            success_message = f"""
+✅ *נרשמת בהצלחה לתקופת ניסיון!*
 
-def main():
-    """הפונקציה הראשית"""
-    logger.info("Starting Telegram Bot...")
+📧 *האימייל שלך:* `{email}`
+👤 *שם משתמש:* @{user.username or 'לא זמין'}
+🆔 *מזהה:* `{user.id}`
+
+🔗 *קישור הצטרפות לערוץ הפרמיום:*
+{invite_link.invite_link}
+
+⏰ *תקופת הניסיון:* 7 ימים מהיום
+📅 *תאריך התחלה:* {context.bot_data.get('current_date', 'היום')}
+
+🎯 *מה תקבל בערוץ:*
+• אנליזות מתקדמות
+• אותות מסחר
+• גרפים וחיזויים
+• תמיכה אישית
+
+*תהנה מתקופת הניסיון! 🚀*
+            """
+            
+            await update.message.reply_text(
+                success_message,
+                parse_mode='Markdown',
+                disable_web_page_preview=True
+            )
+            
+            # שמירת פרטי המשתמש (אופציונלי)
+            logger.info(f"Created trial access for user {user.id} with email {email}")
+            
+            return ConversationHandler.END
+            
+        except TelegramError as e:
+            logger.error(f"Error creating invite link: {e}")
+            await update.message.reply_text(
+                "❌ אירעה שגיאה ביצירת הקישור. אנא נסה שוב מאוחר יותר או פנה לתמיכה.",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
     
-    # יצירת האפליקציה
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    async def cancel_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """ביטול השיחה"""
+        await update.message.reply_text(
+            "❌ הפעולה בוטלה. שלח /start כדי להתחיל מחדש.",
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
     
-    # הגדרת ConversationHandler
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start_command)],
-        states={
-            AWAITING_EMAIL_AND_CONFIRMATION: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_email_and_confirmation)
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """פקודת עזרה"""
+        help_text = """
+🆘 *עזרה - פקודות זמינות:*
+
+/start - התחלת תהליך הרשמה לניסיון
+/help - הצגת הודעת עזרה זו
+/cancel - ביטול תהליך נוכחי
+
+📧 *לרשמה לניסיון:*
+שלח את האימייל שלך בפורמט:
+`your-email@example.com מאשר`
+
+💬 *זקוק לעזרה נוספת?*
+פנה אלינו דרך הערוץ הראשי.
+        """
+        
+        await update.message.reply_text(help_text, parse_mode='Markdown')
+    
+    def setup_handlers(self):
+        """הגדרת handlers"""
+        # ConversationHandler לתהליך הרשמה
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler('start', self.start_command)],
+            states={
+                WAITING_FOR_EMAIL: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_email)
+                ],
+            },
+            fallbacks=[
+                CommandHandler('cancel', self.cancel_command),
+                CommandHandler('start', self.start_command)
             ],
-        },
-        fallbacks=[CommandHandler('cancel', cancel_conversation)],
-        allow_reentry=True,  # מאפשר להתחיל שיחה חדשה גם אם יש כבר אחת פעילה
-    )
+        )
+        
+        # הוספת handlers
+        self.application.add_handler(conv_handler)
+        self.application.add_handler(CommandHandler('help', self.help_command))
+        
+        logger.info("All handlers added successfully")
     
-    # הוספת ה-handlers
-    application.add_handler(conv_handler)
-    application.add_error_handler(error_handler)
+    async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE):
+        """טיפול בשגיאות"""
+        logger.error(f"Exception while handling an update: {context.error}")
+        
+        if isinstance(update, Update) and update.effective_message:
+            await update.effective_message.reply_text(
+                "❌ אירעה שגיאה. אנא נסה שוב או פנה לתמיכה."
+            )
     
-    logger.info("ConversationHandler added successfully")
-    
-    # הפעלת הבוט
-    logger.info("Starting polling...")
-    application.run_polling(
-        drop_pending_updates=True,  # מתעלם מהודעות שהצטברו בזמן שהבוט היה כבוי
-        allowed_updates=['message', 'callback_query']  # מקבל רק הודעות וכפתורים
-    )
+    async def run(self):
+        """הפעלת הבוט"""
+        if not BOT_TOKEN:
+            logger.error("TELEGRAM_BOT_TOKEN not found in environment variables")
+            return
+        
+        if not CHANNEL_ID:
+            logger.error("CHANNEL_ID not found in environment variables")
+            return
+        
+        logger.info("Starting Telegram Bot...")
+        
+        # יצירת Application
+        self.application = Application.builder().token(BOT_TOKEN).build()
+        
+        # הגדרת handlers
+        self.setup_handlers()
+        
+        # הגדרת error handler
+        self.application.add_error_handler(self.error_handler)
+        
+        logger.info("Starting polling...")
+        
+        # הפעלת הבוט
+        await self.application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True
+        )
+
+async def main():
+    """פונקציה ראשית"""
+    bot = TelegramBot()
+    await bot.run()
 
 if __name__ == '__main__':
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")
