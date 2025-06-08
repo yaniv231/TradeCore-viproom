@@ -1,17 +1,3 @@
-# requirements.txt
-
-python-telegram-bot[job-queue] >= 20.0, <22.0
-Flask >= 2.0, <4.0
-gunicorn >= 20.0, <23.0
-APScheduler >= 3.9, <4.0
-gspread >= 5.0, <7.0
-# oauth2client >= 4.0, <5.0 # הוחלף על ידי google-auth ו-google-auth-oauthlib שתלויים ב-gspread
-google-auth >= 1.32.0, <3.0.0 # תלות של gspread ו-google.oauth2.service_account
-google-auth-oauthlib >= 0.4.0, <2.0.0 # תלות אפשרית של gspread
-yfinance >= 0.2.30, <0.3.0
-mplfinance >= 0.12.9b0, <0.13.0 
-# או אם הגרסה הספציפית הזו עדיין בעייתית, נסה טווח כללי יותר:
-# mplfinance >= 0.12, <0.13
-matplotlib >= 3.5, <4.0 # תלות של mplfinance
-requests >= 2.0, <3.0
-python-dotenv >= 0.20, <2.0 # אופציונלי לפיתוח מקומי
+python-telegram-bot[job-queue]==20.8
+requests==2.31.0
+pytz==2023.3
