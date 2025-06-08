@@ -12,10 +12,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# משתני סביבה
-BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-CHANNEL_ID = os.getenv('CHANNEL_ID')
-CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME')
+# משתני סביבה - הוסף את הערכים שלך כאן זמנית
+BOT_TOKEN = os.getenv('7592108692:AAFMyhtTSo-DD_dPakPIEDQdHz2xr_klzgk') or "הכנס_כאן_את_הטוקן_שלך"
+CHANNEL_ID = os.getenv('-100591679360') or "הכנס_כאן_את_מזהה_הערוץ"
+CHANNEL_USERNAME = os.getenv('CHANNEL_USERNAME') or "הכנס_כאן_את_שם_הערוץ"
+
+# בדיקה שהערכים קיימים
+if BOT_TOKEN == "הכנס_כאן_את_הטוקן_שלך":
+    logger.error("Please replace BOT_TOKEN with your actual bot token")
+    exit(1)
+
+if CHANNEL_ID == "הכנס_כאן_את_מזהה_הערוץ":
+    logger.error("Please replace CHANNEL_ID with your actual channel ID")
+    exit(1)
 
 # מצבי השיחה
 WAITING_FOR_EMAIL = 1
@@ -99,7 +108,6 @@ class TelegramBot:
 {invite_link.invite_link}
 
 ⏰ *תקופת הניסיון:* 7 ימים מהיום
-📅 *תאריך התחלה:* {context.bot_data.get('current_date', 'היום')}
 
 🎯 *מה תקבל בערוץ:*
 • אנליזות מתקדמות
@@ -189,14 +197,8 @@ class TelegramBot:
     
     async def run(self):
         """הפעלת הבוט"""
-        if not BOT_TOKEN:
-            logger.error("TELEGRAM_BOT_TOKEN not found in environment variables")
-            return
-        
-        if not CHANNEL_ID:
-            logger.error("CHANNEL_ID not found in environment variables")
-            return
-        
+        logger.info(f"Bot token starts with: {BOT_TOKEN[:10]}...")
+        logger.info(f"Channel ID: {CHANNEL_ID}")
         logger.info("Starting Telegram Bot...")
         
         # יצירת Application
