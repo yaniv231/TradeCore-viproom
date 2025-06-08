@@ -1,11 +1,9 @@
-.gitignore
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
-env/
+.env
+.venv
 venv/
-*.env
-secrets/
-google-service-account-credentials.json
+env/
+.DS_Store
