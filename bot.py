@@ -13,8 +13,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # משתני סביבה - הוסף את הערכים שלך כאן זמנית
-BOT_TOKEN = os.getenv("7592108692:AAHRNtKPAmveFp4nfv_tWvoMt8Cg0gIFJKE") or "הכנס_כאן_את_הטוקן_שלך"
-CHANNEL_ID = os.getenv("-100591679360") or "הכנס_כאן_את_מזהה_הערוץ"
+BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN') or "7592108692:AAHRNtKPAmveFp4nfv_tWvoMt8Cg0gIFJKE"
+"הכנס_כאן_את_הטוקן_שלך"
+CHANNEL_ID = os.getenv('CHANNEL_ID') or "-100591679360"
+
 CHANNEL_USERNAME = os.getenv("TradeCore -vip room") or "הכנס_כאן_את_שם_הערוץ"
 
 # בדיקה שהערכים קיימים
