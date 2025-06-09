@@ -912,3 +912,19 @@ if __name__ == "__main__":
         logger.info("Bot stopped by user")
     except Exception as e:
         logger.error(f"Fatal error: {e}")
+
+
+# בסוף הפונקציה setup_scheduler
+self.scheduler.add_job(
+    self.send_test_message,
+    'date',
+    run_date=datetime.now() + timedelta(seconds=10),
+    args=["🧪 הודעת בדיקה - מערכת פועלת!"]
+)
+
+async def send_test_message(self, text):
+    await self.application.bot.send_message(
+        chat_id=CHANNEL_ID,
+        text=text
+    )
+
