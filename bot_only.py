@@ -18,8 +18,8 @@ import random
 
 # הגדרות תשלום - עדכן את הקישורים שלך!
 PAYPAL_PAYMENT_LINK = "https://paypal.me/@ylevi376/120"  # החלף בקישור שלך
-MONTHLY_PRICE = 120  # מחיר חודשי בדולרים
-
+MONTHLY_PRICE = 120  # מחיר חודשי בשקלים
+CURRENCY = "₪"  # מטבע ישראלי
 # הגדרת לוגינג
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -485,28 +485,32 @@ john.doe@gmail.com מאשר"""
         user_id = query.from_user.id
         choice = query.data
         
-        if choice == "pay_yes":
-            # המשתמש בחר לשלם
-            keyboard = [
-                [InlineKeyboardButton("💳 PayPal", url=PAYPAL_PAYMENT_LINK)],
-                [InlineKeyboardButton("📱 Google Pay", callback_data="gpay_payment")],
-                [InlineKeyboardButton("❌ ביטול", callback_data="pay_cancel")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            payment_message = f"""💳 תשלום PeakTrade VIP
+       if choice == "pay_yes":
+    # המשתמש בחר לשלם
+    keyboard = [
+        [InlineKeyboardButton("💳 PayPal", url=PAYPAL_PAYMENT_LINK)],
+        [InlineKeyboardButton("📱 Google Pay", callback_data="gpay_payment")],
+        [InlineKeyboardButton("❌ ביטול", callback_data="pay_cancel")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    payment_message = f"""💳 תשלום PeakTrade VIP
 
-💰 מחיר: ${MONTHLY_PRICE}/חודש
+💰 מחיר: {MONTHLY_PRICE}{CURRENCY}/חודש
 ⏰ חיוב חודשי אוטומטי
+
+📸 אחרי התשלום שלח צילום מסך
+🚀 עסקה אחת ואתה משלש את ההשקעה!!
 
 🔒 תשלום מאובטח דרך:
 
 לחץ על אחת מהאפשרויות למטה:"""
-            
-            await query.edit_message_text(
-                text=payment_message,
-                reply_markup=reply_markup
-            )
+    
+    await query.edit_message_text(
+        text=payment_message,
+        reply_markup=reply_markup
+    )
+
             
         elif choice == "pay_no":
             # המשתמש בחר לא לשלם
@@ -794,6 +798,7 @@ john.doe@gmail.com מאשר"""
 
 💰 מחיר: ${MONTHLY_PRICE}/חודש
 💳 תשלום מאובטח דרך PayPal
+🚀 עסקה אחת ואתה משלש את ההשקעה!!
 
 מה תבחר?"""
             
@@ -905,3 +910,22 @@ if __name__ == "__main__":
         logger.info("Bot stopped by user")
     except Exception as e:
         logger.error(f"Fatal error: {e}")
+
+async def test_send_message():
+    """פונקציית בדיקה לשליחת הודעה"""
+    bot = PeakTradeBot()
+    
+    # בדיקה פשוטה
+    await bot.application.bot.send_message(
+        chat_id=CHANNEL_ID,
+        text="🧪 בדיקת מערכת PeakTrade VIP\n\n✅ הבוט עובד בהצלחה!\n📊 מוכן לשלוח 13 הודעות יומיות\n💰 מחיר: 120₪/חודש\n🚀 #TestMessage"
+    )
+    
+    # בדיקת שליחת גרף
+    await bot.send_mixed_content()
+    
+    print("✅ Test messages sent!")
+
+# להרצת בדיקה (הוסף בסוף הקובץ)
+# asyncio.run(test_send_message())
+
