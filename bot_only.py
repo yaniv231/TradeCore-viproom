@@ -16,10 +16,6 @@ import matplotlib.pyplot as plt
 import io
 import random
 
-# הגדרות תשלום - עדכן את הקישורים שלך!
-PAYPAL_PAYMENT_LINK = "https://paypal.me/@ylevi376/120"  # החלף בקישור שלך
-MONTHLY_PRICE = 120  # מחיר חודשי בשקלים
-CURRENCY = "₪"  # מטבע ישראלי
 # הגדרת לוגינג
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -33,9 +29,9 @@ CHANNEL_ID = os.getenv('CHANNEL_ID') or "-1002886874719"
 GOOGLE_CREDENTIALS = os.getenv('GOOGLE_CREDENTIALS')
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
 
-# קישורי תשלום (החלף באמיתיים)
+# הגדרות תשלום
 PAYPAL_PAYMENT_LINK = "https://paypal.me/yourpaypal/120"  # החלף בקישור שלך
-MONTHLY_PRICE = 120  # מחיר חודשי בדולרים
+MONTHLY_PRICE = 120  # מחיר חודשי בשקלים
 
 # מצבי השיחה
 WAITING_FOR_EMAIL = 1
@@ -295,7 +291,7 @@ class PeakTradeBot:
 • תוכן ייחודי ומקצועי
 
 ⏰ תקופת ניסיון: 7 ימים חינם
-💰 מחיר מנוי: ${MONTHLY_PRICE}/חודש
+💰 מחיר מנוי: {MONTHLY_PRICE}₪/חודש
 
 ✅ להמשך, אנא שלח את כתובת האימייל שלך בפורמט:
 your-email@example.com מאשר
@@ -485,18 +481,18 @@ john.doe@gmail.com מאשר"""
         user_id = query.from_user.id
         choice = query.data
         
-       if choice == "pay_yes":
-    # המשתמש בחר לשלם
-    keyboard = [
-        [InlineKeyboardButton("💳 PayPal", url=PAYPAL_PAYMENT_LINK)],
-        [InlineKeyboardButton("📱 Google Pay", callback_data="gpay_payment")],
-        [InlineKeyboardButton("❌ ביטול", callback_data="pay_cancel")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    payment_message = f"""💳 תשלום PeakTrade VIP
+        if choice == "pay_yes":
+            # המשתמש בחר לשלם
+            keyboard = [
+                [InlineKeyboardButton("💳 PayPal", url=PAYPAL_PAYMENT_LINK)],
+                [InlineKeyboardButton("📱 Google Pay", callback_data="gpay_payment")],
+                [InlineKeyboardButton("❌ ביטול", callback_data="pay_cancel")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            payment_message = f"""💳 תשלום PeakTrade VIP
 
-💰 מחיר: {MONTHLY_PRICE}{CURRENCY}/חודש
+💰 מחיר: {MONTHLY_PRICE}₪/חודש
 ⏰ חיוב חודשי אוטומטי
 
 📸 אחרי התשלום שלח צילום מסך
@@ -505,12 +501,11 @@ john.doe@gmail.com מאשר"""
 🔒 תשלום מאובטח דרך:
 
 לחץ על אחת מהאפשרויות למטה:"""
-    
-    await query.edit_message_text(
-        text=payment_message,
-        reply_markup=reply_markup
-    )
-
+            
+            await query.edit_message_text(
+                text=payment_message,
+                reply_markup=reply_markup
+            )
             
         elif choice == "pay_no":
             # המשתמש בחר לא לשלם
@@ -554,7 +549,7 @@ john.doe@gmail.com מאשר"""
 4. קבל קישור לערוץ הפרמיום
 
 ⏰ תקופת ניסיון: 7 ימים חינם
-💰 מחיר מנוי: ${MONTHLY_PRICE}/חודש
+💰 מחיר מנוי: {MONTHLY_PRICE}₪/חודש
 
 🎯 מה תקבל (13 הודעות יומיות):
 • 10 המלצות מניות - אמריקאיות וישראליות
@@ -796,8 +791,12 @@ john.doe@gmail.com מאשר"""
 • מניות ישראליות ואמריקאיות
 • המלצות קריפטו
 
-💰 מחיר: ${MONTHLY_PRICE}/חודש
+💰 מחיר: {MONTHLY_PRICE}₪/חודש
 💳 תשלום מאובטח דרך PayPal
+
+⚠️ מי שלא מחדש – מוסר אוטומטית.
+📸 אחרי התשלום שלח צילום מסך
+
 🚀 עסקה אחת ואתה משלש את ההשקעה!!
 
 מה תבחר?"""
@@ -887,7 +886,7 @@ john.doe@gmail.com מאשר"""
             
             logger.info("✅ PeakTrade VIP Bot is running successfully!")
             logger.info("📊 Daily content: 10 stocks + 3 crypto = 13 messages")
-            logger.info(f"💰 Monthly subscription: ${MONTHLY_PRICE}")
+            logger.info(f"💰 Monthly subscription: {MONTHLY_PRICE}₪")
             
             while True:
                 await asyncio.sleep(1)
@@ -910,22 +909,3 @@ if __name__ == "__main__":
         logger.info("Bot stopped by user")
     except Exception as e:
         logger.error(f"Fatal error: {e}")
-
-async def test_send_message():
-    """פונקציית בדיקה לשליחת הודעה"""
-    bot = PeakTradeBot()
-    
-    # בדיקה פשוטה
-    await bot.application.bot.send_message(
-        chat_id=CHANNEL_ID,
-        text="🧪 בדיקת מערכת PeakTrade VIP\n\n✅ הבוט עובד בהצלחה!\n📊 מוכן לשלוח 13 הודעות יומיות\n💰 מחיר: 120₪/חודש\n🚀 #TestMessage"
-    )
-    
-    # בדיקת שליחת גרף
-    await bot.send_mixed_content()
-    
-    print("✅ Test messages sent!")
-
-# להרצת בדיקה (הוסף בסוף הקובץ)
-# asyncio.run(test_send_message())
-
