@@ -16,6 +16,10 @@ import matplotlib.pyplot as plt
 import io
 import random
 
+# הגדרות תשלום - עדכן את הקישורים שלך!
+PAYPAL_PAYMENT_LINK = "https://paypal.me/@ylevi376/120"  # החלף בקישור שלך
+MONTHLY_PRICE = 120  # מחיר חודשי בדולרים
+
 # הגדרת לוגינג
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
