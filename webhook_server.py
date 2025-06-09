@@ -45,14 +45,39 @@ setup_google_sheets()
 def gumroad_webhook():
     """קבלת Webhook מ-Gumroad לאימות תשלום"""
     try:
-        data = request.get_json()
+        # טיפול בפורמטים שונים של נתונים מ-Gumroad
+        data = None
         
-        # חילוץ נתונים
-        sale_id = data.get('sale_id')
-        email = data.get('email')
-        product_name = data.get('product_name')
+        # נסה JSON קודם
+        try:
+            data = request.get_json()
+        except:
+            # אם JSON לא עובד, נסה form data
+            try:
+                data = request.form.to_dict()
+            except:
+                # אם גם זה לא עובד, נסה raw data
+                try:
+                    import json
+                    data = json.loads(request.data.decode('utf-8'))
+                except:
+                    # אם כלום לא עובד, לוג את הנתונים הגולמיים
+                    logger.error(f"Could not parse webhook data. Content-Type: {request.content_type}")
+                    logger.error(f"Raw data: {request.data}")
+                    return jsonify({'error': 'Could not parse data'}), 400
         
-        logger.info(f"Received Gumroad webhook: {sale_id}, {email}")
+        if not data:
+            logger.error("No data received in webhook")
+            return jsonify({'error': 'No data'}), 400
+        
+        logger.info(f"Received Gumroad webhook data: {data}")
+        
+        # חילוץ נתונים (Gumroad יכול לשלוח בשמות שונים)
+        sale_id = data.get('sale_id') or data.get('id')
+        email = data.get('email') or data.get('purchaser_email')
+        product_name = data.get('product_name') or data.get('product')
+        
+        logger.info(f"Parsed: sale_id={sale_id}, email={email}, product={product_name}")
         
         # עדכון Google Sheets
         if sheet and email:
@@ -65,7 +90,7 @@ def gumroad_webhook():
                     
                     # עדכון סטטוס תשלום
                     sheet.update_cell(row_index, 8, "paid_subscriber")  # payment_status
-                    sheet.update_cell(row_index, 9, sale_id)  # gumroad_sale_id
+                    sheet.update_cell(row_index, 9, str(sale_id))  # gumroad_sale_id
                     sheet.update_cell(row_index, 11, current_time)  # last_update_timestamp
                     
                     # שליחת הודעת אישור למשתמש
@@ -75,6 +100,10 @@ def gumroad_webhook():
                     
                     logger.info(f"✅ Payment confirmed for {email}")
                     break
+            else:
+                logger.warning(f"Email {email} not found in Google Sheets")
+        else:
+            logger.error(f"Missing data: sheet={bool(sheet)}, email={email}")
         
         return jsonify({'status': 'success'}), 200
         
