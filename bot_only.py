@@ -130,7 +130,7 @@ class PeakTradeBot:
                     close_yesterday = hist['Close'][-2]
                     change_percent = ((close_today - close_yesterday) / close_yesterday) * 100
                     
-                    if abs(change_percent) > 1.5:
+                    if abs(change_percent) > 0.1:
                         if symbol in israeli_nasdaq_symbols:
                             stock_type = "🇮🇱 ישראלית (נאסד\"ק)"
                         elif symbol.endswith('.TA'):
@@ -183,7 +183,7 @@ class PeakTradeBot:
                     close_yesterday = hist['Close'][-2]
                     change_percent = ((close_today - close_yesterday) / close_yesterday) * 100
                     
-                    if abs(change_percent) > 2:
+                    if abs(change_percent) > 0.2:
                         recommendations.append({
                             'symbol': symbol,
                             'change_percent': change_percent,
