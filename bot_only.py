@@ -15,10 +15,6 @@ import mplfinance as mpf
 import matplotlib.pyplot as plt
 import io
 import random
-import contextlib
-import uvicorn
-from asgiref.wsgi import WsgiToAsgi
-from flask import Flask, request, jsonify
 
 # הגדרת לוגינג
 logging.basicConfig(
@@ -249,6 +245,292 @@ class PeakTradeBot:
             logger.error(f"❌ Error creating chart for {symbol}: {e}")
             return None, None
 
+    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """פקודת התחלה עם disclaimer"""
+        user = update.effective_user
+        logger.info(f"User {user.id} ({user.username}) started PeakTrade bot")
+        
+        if self.check_user_exists(user.id):
+            existing_user_message = f"""🔄 שלום {user.first_name}!
+
+נראה שאתה כבר רשום במערכת שלנו! 
+
+✅ הסטטוס שלך: פעיל בערוץ PeakTrade VIP
+
+🎯 מה תוכל לעשות:
+• להמשיך ליהנות מהתוכן הפרמיום
+• לקבל ניתוחים טכניים יומיים
+• לראות גרפי נרות בזמן אמת
+
+💬 יש שאלות? פנה למנהל הערוץ
+
+תודה שאתה חלק מקהילת PeakTrade VIP! 🚀"""
+            
+            await update.message.reply_text(existing_user_message)
+            return ConversationHandler.END
+        
+        disclaimer_message = f"""🏔️ PeakTrade VIP | הצהרת אחריות
+
+שלום {user.first_name}! 👋
+
+⚠️ הצהרת ויתור אחריות:
+• המידע המוצג בערוץ הוא לצרכי חינוך בלבד
+• אין זו המלצה להשקעה או ייעוץ פיננסי
+• כל השקעה כרוכה בסיכון והפסדים אפשריים
+• אתה נושא באחריות המלאה להחלטותיך
+
+📈 מה תקבל בערוץ PeakTrade VIP:
+• ניתוחים טכניים מתקדמים
+• גרפי נרות בזמן אמת עם סטופלוס מומלץ
+• המלצות מניות דינמיות - אמריקאיות וישראליות
+• המלצות קריפטו מובילות
+• תוכן ייחודי ומקצועי
+
+⏰ תקופת ניסיון: 7 ימים חינם
+
+✅ להמשך, אנא שלח את כתובת האימייל שלך בפורמט:
+your-email@example.com מאשר
+
+💡 דוגמה:
+john.doe@gmail.com מאשר
+
+חשוב: השתמש באותו אימייל לתשלום עתידי!"""
+        
+        await update.message.reply_text(disclaimer_message)
+        
+        await self.log_disclaimer_sent(user)
+        return WAITING_FOR_EMAIL
+    
+    async def log_disclaimer_sent(self, user):
+        """רישום שליחת disclaimer ב-Google Sheets"""
+        try:
+            if not self.sheet:
+                return
+                
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            new_row = [
+                user.id,
+                user.username or "N/A",
+                "",
+                current_time,
+                "pending",
+                "",
+                "",
+                "trial_pending",
+                "",
+                "",
+                current_time
+            ]
+            self.sheet.append_row(new_row)
+            logger.info(f"✅ Disclaimer logged for user {user.id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error logging disclaimer: {e}")
+    
+    async def handle_email_confirmation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """טיפול באישור האימייל"""
+        user = update.effective_user
+        message_text = update.message.text.strip()
+        
+        logger.info(f"User {user.id} sent: {message_text}")
+        
+        if "מאשר" not in message_text:
+            await update.message.reply_text(
+                "❌ אנא שלח את האימייל בפורמט הנכון:\n"
+                "your-email@example.com מאשר"
+            )
+            return WAITING_FOR_EMAIL
+        
+        email = message_text.replace("מאשר", "").strip()
+        
+        if "@" not in email or "." not in email:
+            await update.message.reply_text(
+                "❌ כתובת האימייל לא תקינה. אנא נסה שוב:\n"
+                "your-email@example.com מאשר"
+            )
+            return WAITING_FOR_EMAIL
+        
+        processing_msg = await update.message.reply_text(
+            "⏳ מעבד את הרישום לתקופת ניסיון..."
+        )
+        
+        try:
+            await self.register_trial_user(user, email)
+            
+            invite_link = await context.bot.create_chat_invite_link(
+                chat_id=CHANNEL_ID,
+                member_limit=1,
+                expire_date=int((datetime.now() + timedelta(days=8)).timestamp()),
+                name=f"Trial_{user.id}_{email.split('@')[0]}"
+            )
+            
+            success_message = f"""✅ ברוך הבא ל-PeakTrade VIP!
+
+📧 האימייל שלך: {email}
+👤 משתמש: @{user.username or 'לא זמין'}
+🆔 מזהה: {user.id}
+
+🔗 קישור הצטרפות לערוץ הפרמיום:
+{invite_link.invite_link}
+
+⏰ תקופת ניסיון: 7 ימים
+📅 מתחיל: {datetime.now().strftime("%d/%m/%Y")}
+📅 מסתיים: {(datetime.now() + timedelta(days=7)).strftime("%d/%m/%Y")}
+
+🎯 מה תקבל בערוץ:
+• 10 ניתוחים טכניים יומיים (מניות)
+• 3 המלצות קריפטו יומיות
+• גרפי נרות בזמן אמת עם סטופלוס
+• המלצות אמריקאיות וישראליות
+• תובנות שוק ייחודיות
+
+💳 לפני סיום תקופת הניסיון תקבל הודעה עם אפשרות להמשיך כמנוי בתשלום.
+
+לחץ על הקישור והצטרף עכשיו! 🚀"""
+            
+            await processing_msg.edit_text(
+                success_message,
+                disable_web_page_preview=True
+            )
+            
+            logger.info(f"✅ Trial registration successful for user {user.id}")
+            return ConversationHandler.END
+            
+        except Exception as e:
+            logger.error(f"❌ Error in trial registration: {e}")
+            await processing_msg.edit_text(
+                f"❌ שגיאה ברישום לתקופת ניסיון\n\n"
+                f"פרטי השגיאה: {str(e)}\n\n"
+                f"אנא פנה לתמיכה."
+            )
+            return ConversationHandler.END
+    
+    async def register_trial_user(self, user, email):
+        """רישום משתמש לתקופת ניסיון ב-Google Sheets"""
+        try:
+            if not self.sheet:
+                raise Exception("Google Sheets not connected")
+            
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            trial_end = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+            
+            all_values = self.sheet.get_all_values()
+            user_row = None
+            
+            for i, row in enumerate(all_values):
+                if len(row) > 0 and str(row[0]) == str(user.id):
+                    user_row = i + 1
+                    break
+            
+            if user_row and user_row > 1:
+                try:
+                    logger.info(f"Updating existing user at row {user_row}")
+                    
+                    updates = [
+                        (user_row, 3, email),
+                        (user_row, 5, "confirmed"),
+                        (user_row, 6, current_time),
+                        (user_row, 7, trial_end),
+                        (user_row, 8, "trial_active"),
+                        (user_row, 11, current_time)
+                    ]
+                    
+                    for row, col, value in updates:
+                        try:
+                            self.sheet.update_cell(row, col, value)
+                        except Exception as update_error:
+                            logger.error(f"Error updating cell ({row}, {col}): {update_error}")
+                            raise Exception("Update failed, will create new row")
+                    
+                except Exception as update_error:
+                    logger.warning(f"Failed to update existing row: {update_error}")
+                    user_row = None
+            
+            if not user_row:
+                logger.info("Adding new user row")
+                new_row = [
+                    user.id,
+                    user.username or "N/A",
+                    email,
+                    current_time,
+                    "confirmed",
+                    current_time,
+                    trial_end,
+                    "trial_active",
+                    "",
+                    "",
+                    current_time
+                ]
+                self.sheet.append_row(new_row)
+            
+            logger.info(f"✅ User {user.id} registered for trial successfully")
+            
+        except Exception as e:
+            logger.error(f"❌ Error registering trial user: {e}")
+            raise Exception(f"Google Sheets error: {str(e)}")
+    
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """פקודת עזרה"""
+        help_text = """🆘 PeakTrade VIP Bot - עזרה
+
+📋 פקודות זמינות:
+/start - התחלת תהליך רישום
+/help - הצגת עזרה זו
+
+✅ איך להצטרף:
+1. שלח /start
+2. קרא את הצהרת האחריות
+3. שלח את האימייל שלך + "מאשר"
+4. קבל קישור לערוץ הפרמיום
+
+⏰ תקופת ניסיון: 7 ימים חינם
+💳 תשלום: דרך Gumroad
+
+🎯 מה תקבל (13 הודעות יומיות):
+• 10 המלצות מניות - אמריקאיות וישראליות
+• 3 המלצות קריפטו מובילות
+• גרפי נרות עם סטופלוס מומלץ
+• ניתוחים טכניים מתקדמים
+
+🇮🇱 מניות ישראליות כלולות:
+• נאסד"ק: Check Point, CyberArk, NICE, Monday.com
+• ת"א: טבע, כימיקלים לישראל, בנק הפועלים
+
+🪙 קריפטו כלול:
+• Bitcoin, Ethereum, Solana, Ripple, BNB, ועוד
+
+💬 תמיכה: פנה למנהל הערוץ"""
+        
+        await update.message.reply_text(help_text)
+    
+    async def cancel_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """ביטול תהליך"""
+        await update.message.reply_text(
+            "❌ התהליך בוטל. שלח /start כדי להתחיל מחדש."
+        )
+        return ConversationHandler.END
+    
+    def setup_handlers(self):
+        """הגדרת handlers"""
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler('start', self.start_command)],
+            states={
+                WAITING_FOR_EMAIL: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_email_confirmation)
+                ],
+            },
+            fallbacks=[
+                CommandHandler('cancel', self.cancel_command),
+                CommandHandler('start', self.start_command)
+            ],
+        )
+        
+        self.application.add_handler(conv_handler)
+        self.application.add_handler(CommandHandler('help', self.help_command))
+        
+        logger.info("✅ All handlers configured")
+
     async def send_mixed_content(self):
         """שליחת תוכן מעורב עם מניות אמריקאיות וישראליות"""
         try:
@@ -386,9 +668,110 @@ class PeakTradeBot:
         except Exception as e:
             logger.error(f"❌ Error sending crypto content: {e}")
 
+    async def check_trial_expiry(self):
+        """בדיקת תפוגת תקופות ניסיון"""
+        try:
+            if not self.sheet:
+                return
+            
+            records = self.sheet.get_all_records()
+            current_time = datetime.now()
+            
+            for i, record in enumerate(records):
+                if record.get('payment_status') == 'trial_active':
+                    trial_end_str = record.get('trial_end_date')
+                    if trial_end_str:
+                        try:
+                            trial_end = datetime.strptime(trial_end_str, "%Y-%m-%d %H:%M:%S")
+                            
+                            if current_time > trial_end:
+                                user_id = record.get('telegram_user_id')
+                                await self.handle_trial_expired(user_id, i + 2)
+                            
+                            elif (trial_end - current_time).days == 1:
+                                user_id = record.get('telegram_user_id')
+                                await self.send_payment_reminder(user_id)
+                        except ValueError:
+                            logger.error(f"Invalid date format: {trial_end_str}")
+            
+            logger.info("✅ Trial expiry check completed")
+            
+        except Exception as e:
+            logger.error(f"❌ Error checking trial expiry: {e}")
+    
+    async def send_payment_reminder(self, user_id):
+        """שליחת תזכורת תשלום"""
+        try:
+            reminder_message = """⏰ תזכורת: תקופת הניסיון מסתיימת מחר!
+
+היי! תקופת הניסיון של 7 ימים ב-PeakTrade VIP מסתיימת מחר.
+
+💎 כדי להמשיך ליהנות מהתוכן הפרמיום:
+🔗 לחץ כאן לרכישת מנוי: [קישור Gumroad]
+
+💳 תשלום מאובטח דרך:
+• כרטיס אשראי
+• Apple Pay
+• Google Pay
+
+⚠️ חשוב: השתמש באותו אימייל שרשמת איתו!
+
+תודה שאתה חלק מקהילת PeakTrade VIP! 🚀"""
+            
+            await self.application.bot.send_message(
+                chat_id=user_id,
+                text=reminder_message
+            )
+            
+            logger.info(f"✅ Payment reminder sent to user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error sending payment reminder to {user_id}: {e}")
+    
+    async def handle_trial_expired(self, user_id, row_index):
+        """טיפול במשתמש שתקופת הניסיון שלו הסתיימה"""
+        try:
+            await self.application.bot.ban_chat_member(
+                chat_id=CHANNEL_ID,
+                user_id=user_id
+            )
+            
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            try:
+                self.sheet.update_cell(row_index, 8, "expired_no_payment")
+                self.sheet.update_cell(row_index, 11, current_time)
+            except Exception as update_error:
+                logger.error(f"Error updating expiry status: {update_error}")
+            
+            expiry_message = """⏰ תקופת הניסיון הסתיימה
+
+היי! תקופת הניסיון שלך ב-PeakTrade VIP הסתיימה.
+
+💎 רוצה להמשיך ליהנות מהתוכן הפרמיום?
+🔗 לחץ כאן לרכישת מנוי: [קישור Gumroad]
+
+תודה שניסית את PeakTrade VIP! 🙏"""
+            
+            await self.application.bot.send_message(
+                chat_id=user_id,
+                text=expiry_message
+            )
+            
+            logger.info(f"✅ Trial expired handled for user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error handling trial expiry for {user_id}: {e}")
+
     def setup_scheduler(self):
         """הגדרת תזמון משימות - 10 מניות + 3 קריפטו"""
         self.scheduler = AsyncIOScheduler()
+        
+        # בדיקת תפוגת ניסיונות
+        self.scheduler.add_job(
+            self.check_trial_expiry,
+            CronTrigger(hour=9, minute=0),
+            id='check_trial_expiry'
+        )
         
         # 10 משימות מניות (ישראל+חו"ל)
         for i in range(10):
@@ -417,9 +800,10 @@ class PeakTradeBot:
 
     async def run(self):
         """הפעלת הבוט"""
-        logger.info("🚀 Starting PeakTrade VIP Bot...")
+        logger.info("🚀 Starting PeakTrade VIP Bot (Background Worker)...")
         
         self.application = Application.builder().token(BOT_TOKEN).build()
+        self.setup_handlers()
         self.setup_scheduler()
         
         try:
@@ -442,26 +826,6 @@ class PeakTradeBot:
                 await self.application.updater.stop()
                 await self.application.stop()
                 await self.application.shutdown()
-
-# יצירת אפליקציית Flask לWebhooks
-flask_app = Flask(__name__)
-
-@flask_app.route('/health', methods=['GET'])
-def health_check():
-    return "OK", 200
-
-# מתאם WSGI -> ASGI עבור אפליקציית ה-Flask
-flask_asgi_app = WsgiToAsgi(flask_app)
-
-# יצירת אפליקציית ASGI ראשית שתשלב את הכל
-async def asgi_app(scope, receive, send):
-    """אפליקציית ה-ASGI הראשית ש-Uvicorn יריץ"""
-    if scope['type'] == 'lifespan':
-        bot = PeakTradeBot()
-        asyncio.create_task(bot.run())
-        await flask_asgi_app(scope, receive, send)
-    else:
-        await flask_asgi_app(scope, receive, send)
 
 if __name__ == "__main__":
     bot = PeakTradeBot()
