@@ -481,7 +481,7 @@ john.doe@gmail.com מאשר
             user_row = None
             
             for i, row in enumerate(all_values):
-                if len(row) > 0 and str(row[0]) == str(user.id):
+              if len(row) > 0 and str(row[0]) == str(user.id):
                     user_row = i + 1
                     break
             
