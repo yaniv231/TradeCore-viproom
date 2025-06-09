@@ -3,8 +3,8 @@ import os
 import asyncio
 import json
 from datetime import datetime, timedelta
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
 from telegram.error import TelegramError
 import gspread
 from google.oauth2.service_account import Credentials
@@ -28,6 +28,10 @@ BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN') or "7619055199:AAEL28DJ-E1Xl7iEfdPqT
 CHANNEL_ID = os.getenv('CHANNEL_ID') or "-1002886874719"
 GOOGLE_CREDENTIALS = os.getenv('GOOGLE_CREDENTIALS')
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
+
+# קישורי תשלום (החלף באמיתיים)
+PAYPAL_PAYMENT_LINK = "https://paypal.me/yourpaypal/120"  # החלף בקישור שלך
+MONTHLY_PRICE = 120  # מחיר חודשי בדולרים
 
 # מצבי השיחה
 WAITING_FOR_EMAIL = 1
@@ -60,7 +64,7 @@ class PeakTradeBot:
                             'telegram_user_id', 'telegram_username', 'email', 
                             'disclaimer_sent_time', 'confirmation_status', 
                             'trial_start_date', 'trial_end_date', 'payment_status',
-                            'gumroad_sale_id', 'gumroad_subscription_id', 'last_update_timestamp'
+                            'payment_method', 'payment_date', 'last_update_timestamp'
                         ]
                         self.sheet.append_row(header_row)
                         logger.info("✅ Headers added to Google Sheets")
@@ -287,14 +291,13 @@ class PeakTradeBot:
 • תוכן ייחודי ומקצועי
 
 ⏰ תקופת ניסיון: 7 ימים חינם
+💰 מחיר מנוי: ${MONTHLY_PRICE}/חודש
 
 ✅ להמשך, אנא שלח את כתובת האימייל שלך בפורמט:
 your-email@example.com מאשר
 
 💡 דוגמה:
-john.doe@gmail.com מאשר
-
-חשוב: השתמש באותו אימייל לתשלום עתידי!"""
+john.doe@gmail.com מאשר"""
         
         await update.message.reply_text(disclaimer_message)
         
@@ -469,10 +472,68 @@ john.doe@gmail.com מאשר
         except Exception as e:
             logger.error(f"❌ Error registering trial user: {e}")
             raise Exception(f"Google Sheets error: {str(e)}")
-    
+
+    async def handle_payment_choice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """טיפול בבחירת תשלום"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = query.from_user.id
+        choice = query.data
+        
+        if choice == "pay_yes":
+            # המשתמש בחר לשלם
+            keyboard = [
+                [InlineKeyboardButton("💳 PayPal", url=PAYPAL_PAYMENT_LINK)],
+                [InlineKeyboardButton("📱 Google Pay", callback_data="gpay_payment")],
+                [InlineKeyboardButton("❌ ביטול", callback_data="pay_cancel")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            payment_message = f"""💳 תשלום PeakTrade VIP
+
+💰 מחיר: ${MONTHLY_PRICE}/חודש
+⏰ חיוב חודשי אוטומטי
+
+🔒 תשלום מאובטח דרך:
+
+לחץ על אחת מהאפשרויות למטה:"""
+            
+            await query.edit_message_text(
+                text=payment_message,
+                reply_markup=reply_markup
+            )
+            
+        elif choice == "pay_no":
+            # המשתמש בחר לא לשלם
+            await self.handle_trial_expired(user_id, None)
+            
+            goodbye_message = """👋 תודה שניסית את PeakTrade VIP!
+
+הוסרת מהערוץ הפרמיום.
+
+💡 תמיד אפשר לחזור ולהירשם שוב!
+שלח /start כדי להתחיל מחדש.
+
+תודה ובהצלחה! 🙏"""
+            
+            await query.edit_message_text(text=goodbye_message)
+            
+        elif choice == "gpay_payment":
+            # Google Pay (לעתיד - כרגע הפניה ל-PayPal)
+            await query.edit_message_text(
+                text=f"📱 Google Pay זמין בקרוב!\n\nבינתיים אפשר לשלם דרך PayPal:\n{PAYPAL_PAYMENT_LINK}"
+            )
+            
+        elif choice == "pay_cancel":
+            # ביטול התשלום
+            await query.edit_message_text(
+                text="❌ התשלום בוטל.\n\nתקבל תזכורת נוספת מחר."
+            )
+
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """פקודת עזרה"""
-        help_text = """🆘 PeakTrade VIP Bot - עזרה
+        help_text = f"""🆘 PeakTrade VIP Bot - עזרה
 
 📋 פקודות זמינות:
 /start - התחלת תהליך רישום
@@ -485,7 +546,7 @@ john.doe@gmail.com מאשר
 4. קבל קישור לערוץ הפרמיום
 
 ⏰ תקופת ניסיון: 7 ימים חינם
-💳 תשלום: דרך Gumroad
+💰 מחיר מנוי: ${MONTHLY_PRICE}/חודש
 
 🎯 מה תקבל (13 הודעות יומיות):
 • 10 המלצות מניות - אמריקאיות וישראליות
@@ -499,6 +560,10 @@ john.doe@gmail.com מאשר
 
 🪙 קריפטו כלול:
 • Bitcoin, Ethereum, Solana, Ripple, BNB, ועוד
+
+💳 תשלום דרך:
+• PayPal (זמין עכשיו)
+• Google Pay (בקרוב)
 
 💬 תמיכה: פנה למנהל הערוץ"""
         
@@ -528,6 +593,7 @@ john.doe@gmail.com מאשר
         
         self.application.add_handler(conv_handler)
         self.application.add_handler(CommandHandler('help', self.help_command))
+        self.application.add_handler(CallbackQueryHandler(self.handle_payment_choice))
         
         logger.info("✅ All handlers configured")
 
@@ -684,13 +750,16 @@ john.doe@gmail.com מאשר
                         try:
                             trial_end = datetime.strptime(trial_end_str, "%Y-%m-%d %H:%M:%S")
                             
-                            if current_time > trial_end:
-                                user_id = record.get('telegram_user_id')
-                                await self.handle_trial_expired(user_id, i + 2)
-                            
-                            elif (trial_end - current_time).days == 1:
+                            # יום לפני סיום הניסיון
+                            if (trial_end - current_time).days == 1:
                                 user_id = record.get('telegram_user_id')
                                 await self.send_payment_reminder(user_id)
+                            
+                            # ניסיון הסתיים
+                            elif current_time > trial_end:
+                                user_id = record.get('telegram_user_id')
+                                await self.handle_trial_expired(user_id, i + 2)
+                                
                         except ValueError:
                             logger.error(f"Invalid date format: {trial_end_str}")
             
@@ -700,27 +769,34 @@ john.doe@gmail.com מאשר
             logger.error(f"❌ Error checking trial expiry: {e}")
     
     async def send_payment_reminder(self, user_id):
-        """שליחת תזכורת תשלום"""
+        """שליחת תזכורת תשלום עם כפתורים"""
         try:
-            reminder_message = """⏰ תזכורת: תקופת הניסיון מסתיימת מחר!
+            keyboard = [
+                [InlineKeyboardButton("💎 כן - אני רוצה להמשיך!", callback_data="pay_yes")],
+                [InlineKeyboardButton("❌ לא תודה", callback_data="pay_no")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            reminder_message = f"""⏰ תקופת הניסיון מסתיימת מחר!
 
 היי! תקופת הניסיון של 7 ימים ב-PeakTrade VIP מסתיימת מחר.
 
-💎 כדי להמשיך ליהנות מהתוכן הפרמיום:
-🔗 לחץ כאן לרכישת מנוי: [קישור Gumroad]
+💎 רוצה להמשיך ליהנות מהתוכן הפרמיום?
+• 13 הודעות יומיות
+• ניתוחים טכניים מתקדמים
+• גרפי נרות עם סטופלוס
+• מניות ישראליות ואמריקאיות
+• המלצות קריפטו
 
-💳 תשלום מאובטח דרך:
-• כרטיס אשראי
-• Apple Pay
-• Google Pay
+💰 מחיר: ${MONTHLY_PRICE}/חודש
+💳 תשלום מאובטח דרך PayPal
 
-⚠️ חשוב: השתמש באותו אימייל שרשמת איתו!
-
-תודה שאתה חלק מקהילת PeakTrade VIP! 🚀"""
+מה תבחר?"""
             
             await self.application.bot.send_message(
                 chat_id=user_id,
-                text=reminder_message
+                text=reminder_message,
+                reply_markup=reply_markup
             )
             
             logger.info(f"✅ Payment reminder sent to user {user_id}")
@@ -731,31 +807,20 @@ john.doe@gmail.com מאשר
     async def handle_trial_expired(self, user_id, row_index):
         """טיפול במשתמש שתקופת הניסיון שלו הסתיימה"""
         try:
+            # הסרת המשתמש מהערוץ
             await self.application.bot.ban_chat_member(
                 chat_id=CHANNEL_ID,
                 user_id=user_id
             )
             
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            try:
-                self.sheet.update_cell(row_index, 8, "expired_no_payment")
-                self.sheet.update_cell(row_index, 11, current_time)
-            except Exception as update_error:
-                logger.error(f"Error updating expiry status: {update_error}")
-            
-            expiry_message = """⏰ תקופת הניסיון הסתיימה
-
-היי! תקופת הניסיון שלך ב-PeakTrade VIP הסתיימה.
-
-💎 רוצה להמשיך ליהנות מהתוכן הפרמיום?
-🔗 לחץ כאן לרכישת מנוי: [קישור Gumroad]
-
-תודה שניסית את PeakTrade VIP! 🙏"""
-            
-            await self.application.bot.send_message(
-                chat_id=user_id,
-                text=expiry_message
-            )
+            # עדכון סטטוס ב-Google Sheets
+            if row_index and self.sheet:
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                try:
+                    self.sheet.update_cell(row_index, 8, "expired_no_payment")
+                    self.sheet.update_cell(row_index, 11, current_time)
+                except Exception as update_error:
+                    logger.error(f"Error updating expiry status: {update_error}")
             
             logger.info(f"✅ Trial expired handled for user {user_id}")
             
@@ -766,7 +831,7 @@ john.doe@gmail.com מאשר
         """הגדרת תזמון משימות - 10 מניות + 3 קריפטו"""
         self.scheduler = AsyncIOScheduler()
         
-        # בדיקת תפוגת ניסיונות
+        # בדיקת תפוגת ניסיונות כל יום ב-9:00
         self.scheduler.add_job(
             self.check_trial_expiry,
             CronTrigger(hour=9, minute=0),
@@ -813,6 +878,7 @@ john.doe@gmail.com מאשר
             
             logger.info("✅ PeakTrade VIP Bot is running successfully!")
             logger.info("📊 Daily content: 10 stocks + 3 crypto = 13 messages")
+            logger.info(f"💰 Monthly subscription: ${MONTHLY_PRICE}")
             
             while True:
                 await asyncio.sleep(1)
