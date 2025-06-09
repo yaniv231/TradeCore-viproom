@@ -17,8 +17,6 @@ import io
 import random
 
 
-self.scheduler = AsyncIOScheduler(timezone="Asia/Jerusalem")  # IDT/IST
-
 # הגדרת לוגינג
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
