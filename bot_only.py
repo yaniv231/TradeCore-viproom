@@ -621,6 +621,16 @@ john.doe@gmail.com מאשר"""
             symbol = selected['symbol']
             stock_type = selected['type']
             sector = selected['sector']
+
+            try:
+            stock = yf.Ticker(symbol)
+            data = stock.history(period="30d")
+            if data.empty:
+                raise ValueError("No data available")
+        except Exception as yf_error:
+            logger.error(f"❌ yFinance error for {symbol}: {yf_error}")
+            await self.send_text_analysis(symbol, stock_type)
+            return
             
             # קבלת נתונים מפורטים
             stock = yf.Ticker(symbol)
@@ -673,6 +683,9 @@ john.doe@gmail.com מאשר"""
 🚀 יעד שני: {currency}{profit_target_2:.2f} (רווח מקסימלי)
 
 ⚖️ יחס סיכון/תשואה: 1:{risk_reward:.1f}
+
+import time
+await asyncio.sleep(1)  # השהייה של שניה בין בקשות
 
 💡 המלצה בלעדית PeakTrade:
 {"🔥 כניסה מומלצת - מגמה חזקה!" if change_percent > 2 else "⚡ המתן לפריצה מעל נקודת הכניסה" if change_percent > 0 else "⏳ המתן לייצוב לפני כניסה"}
