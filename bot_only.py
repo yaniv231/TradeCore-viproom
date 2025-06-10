@@ -16,7 +16,6 @@ import matplotlib.pyplot as plt
 import io
 import random
 
-
 # הגדרת לוגינג
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -95,118 +94,6 @@ class PeakTradeBot:
             logger.error(f"❌ Error checking user existence: {e}")
             return False
 
-    def get_mixed_stock_recommendations(self):
-        """קבלת המלצות מניות מעורבות - אמריקאיות וישראליות"""
-        try:
-            us_symbols = [
-                'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'NFLX', 
-                'AMD', 'INTC', 'IBM', 'CSCO', 'ORCL', 'CRM', 'ADBE', 'PYPL',
-                'UBER', 'LYFT', 'SPOT', 'ZOOM', 'SHOP', 'SQ', 'ROKU',
-                'SNAP', 'PINS', 'DOCU', 'ZM', 'PLTR', 'COIN', 'RBLX', 'HOOD'
-            ]
-            
-            israeli_nasdaq_symbols = [
-                'CHKP', 'CYBR', 'NICE', 'MNDY', 'WIX', 'FVRR', 'TEVA',
-                'CELG', 'PLTK', 'SSYS', 'NNDM', 'RDWR', 'MGIC', 'GILT',
-                'ELBM', 'OPRX', 'KRNT', 'INMD', 'SMWB', 'SPNS'
-            ]
-            
-            israeli_ta_symbols = [
-                'TEVA.TA', 'ICL.TA', 'BANK.TA', 'LUMI.TA', 'ELCO.TA',
-                'AZRM.TA', 'DORL.TA', 'ISCN.TA', 'ALHE.TA', 'MZTF.TA'
-            ]
-            
-            all_symbols = us_symbols + israeli_nasdaq_symbols + israeli_ta_symbols
-            recommendations = []
-            
-            for symbol in all_symbols:
-                try:
-                    stock = yf.Ticker(symbol)
-                    hist = stock.history(period='2d')
-                    
-                    if hist.empty or len(hist) < 2:
-                        continue
-                    
-                    close_today = hist['Close'][-1]
-                    close_yesterday = hist['Close'][-2]
-                    change_percent = ((close_today - close_yesterday) / close_yesterday) * 100
-                    
-                    if abs(change_percent) > 0.1:
-                        if symbol in israeli_nasdaq_symbols:
-                            stock_type = "🇮🇱 ישראלית (נאסד\"ק)"
-                        elif symbol.endswith('.TA'):
-                            stock_type = "🇮🇱 ישראלית (ת\"א)"
-                        else:
-                            stock_type = "🇺🇸 אמריקאית"
-                            
-                        recommendations.append({
-                            'symbol': symbol,
-                            'change_percent': change_percent,
-                            'current_price': close_today,
-                            'stock_type': stock_type
-                        })
-                        
-                except Exception as e:
-                    logger.error(f"Error processing {symbol}: {e}")
-                    continue
-            
-            recommendations.sort(key=lambda x: abs(x['change_percent']), reverse=True)
-            return recommendations[:12]
-            
-        except Exception as e:
-            logger.error(f"❌ Error getting mixed stock recommendations: {e}")
-            return [
-                {'symbol': 'AAPL', 'change_percent': 0, 'current_price': 150, 'stock_type': '🇺🇸 אמריקאית'},
-                {'symbol': 'CHKP', 'change_percent': 0, 'current_price': 120, 'stock_type': '🇮🇱 ישראלית (נאסד"ק)'},
-                {'symbol': 'TEVA.TA', 'change_percent': 0, 'current_price': 50, 'stock_type': '🇮🇱 ישראלית (ת"א)'}
-            ]
-
-    def get_crypto_recommendations(self):
-        """קבלת המלצות קריפטו מובילות"""
-        try:
-            crypto_symbols = [
-                'BTC-USD', 'ETH-USD', 'SOL-USD', 'XRP-USD', 'BNB-USD',
-                'ADA-USD', 'DOGE-USD', 'TRX-USD', 'AVAX-USD', 'DOT-USD',
-                'MATIC-USD', 'LINK-USD'
-            ]
-            
-            recommendations = []
-            
-            for symbol in crypto_symbols:
-                try:
-                    crypto = yf.Ticker(symbol)
-                    hist = crypto.history(period='2d')
-                    
-                    if hist.empty or len(hist) < 2:
-                        continue
-                    
-                    close_today = hist['Close'][-1]
-                    close_yesterday = hist['Close'][-2]
-                    change_percent = ((close_today - close_yesterday) / close_yesterday) * 100
-                    
-                    if abs(change_percent) > 0.2:
-                        recommendations.append({
-                            'symbol': symbol,
-                            'change_percent': change_percent,
-                            'current_price': close_today,
-                            'crypto_type': '🪙 קריפטו'
-                        })
-                        
-                except Exception as e:
-                    logger.error(f"Error processing crypto {symbol}: {e}")
-                    continue
-            
-            recommendations.sort(key=lambda x: abs(x['change_percent']), reverse=True)
-            return recommendations[:6]
-            
-        except Exception as e:
-            logger.error(f"❌ Error getting crypto recommendations: {e}")
-            return [
-                {'symbol': 'BTC-USD', 'change_percent': 0, 'current_price': 50000, 'crypto_type': '🪙 קריפטו'},
-                {'symbol': 'ETH-USD', 'change_percent': 0, 'current_price': 3000, 'crypto_type': '🪙 קריפטו'},
-                {'symbol': 'SOL-USD', 'change_percent': 0, 'current_price': 100, 'crypto_type': '🪙 קריפטו'}
-            ]
-
     def create_advanced_chart_with_stoploss(self, symbol):
         """יצירת גרף נרות מתקדם עם סטופלוס מומלץ"""
         try:
@@ -222,9 +109,8 @@ class PeakTradeBot:
             plt.style.use('dark_background')
             fig, ax = plt.subplots(figsize=(12, 8))
             
-            mpf.plot(data, type='candle', style='charles', 
-                    title=f'{symbol} - 30 Days Candlestick Chart',
-                    ylabel='Price', ax=ax)
+            # גרף קו במקום נרות (פשוט יותר)
+            ax.plot(data.index, data['Close'], color='white', linewidth=2, label=f'{symbol} Price')
             
             ax.axhline(stoploss, color='red', linestyle='--', linewidth=2, 
                       label=f'Stop Loss: {stoploss:.2f} (-2%)', alpha=0.8)
@@ -235,6 +121,8 @@ class PeakTradeBot:
             ax.axhline(profit_target, color='green', linestyle=':', linewidth=1.5, 
                       label=f'Target: {profit_target:.2f} (+5%)', alpha=0.8)
             
+            ax.set_title(f'{symbol} - 30 Days Chart', color='white', fontsize=16)
+            ax.set_ylabel('Price', color='white')
             ax.legend(loc='upper left')
             ax.grid(True, alpha=0.3)
             
@@ -383,8 +271,8 @@ john.doe@gmail.com מאשר"""
 📅 מסתיים: {(datetime.now() + timedelta(days=7)).strftime("%d/%m/%Y")}
 
 🎯 מה תקבל בערוץ:
-• 10 ניתוחים טכניים יומיים (מניות)
-• 3 המלצות קריפטו יומיות
+• הודעות כל 30 דקות בין 10:00-22:00
+• ניתוחים טכניים מתקדמים
 • גרפי נרות בזמן אמת עם סטופלוס
 • המלצות אמריקאיות וישראליות
 • תובנות שוק ייחודיות
@@ -552,18 +440,12 @@ john.doe@gmail.com מאשר"""
 ⏰ תקופת ניסיון: 7 ימים חינם
 💰 מחיר מנוי: {MONTHLY_PRICE}₪/חודש
 
-🎯 מה תקבל (13 הודעות יומיות):
-• 10 המלצות מניות - אמריקאיות וישראליות
-• 3 המלצות קריפטו מובילות
-• גרפי נרות עם סטופלוס מומלץ
+🎯 מה תקבל:
+• הודעות כל 30 דקות בין 10:00-22:00
 • ניתוחים טכניים מתקדמים
-
-🇮🇱 מניות ישראליות כלולות:
-• נאסד"ק: Check Point, CyberArk, NICE, Monday.com
-• ת"א: טבע, כימיקלים לישראל, בנק הפועלים
-
-🪙 קריפטו כלול:
-• Bitcoin, Ethereum, Solana, Ripple, BNB, ועוד
+• גרפי נרות עם סטופלוס מומלץ
+• המלצות מניות אמריקאיות וישראליות
+• המלצות קריפטו מובילות
 
 💳 תשלום דרך:
 • PayPal (זמין עכשיו)
@@ -601,25 +483,72 @@ john.doe@gmail.com מאשר"""
         
         logger.info("✅ All handlers configured")
 
-    async def send_mixed_content(self):
-        """שליחת תוכן מעורב עם מניות אמריקאיות וישראליות"""
+    async def send_test_message(self):
+        """שליחת הודעת בדיקה מיידית"""
         try:
-            recommendations = self.get_mixed_stock_recommendations()
+            test_message = """🧪 בדיקת מערכת PeakTrade VIP
+
+✅ הבוט פעיל ועובד!
+📊 מערכת תזמון פועלת
+⏰ הודעות כל 30 דקות בין 10:00-22:00
+
+💰 מחיר מנוי: 120₪/חודש
+🚀 עסקה אחת ואתה משלש את ההשקעה!!
+
+#TestMessage #PeakTradeVIP"""
             
-            if not recommendations:
-                logger.warning("No mixed stock recommendations available")
-                return
+            await self.application.bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=test_message
+            )
             
-            selected_stock = random.choice(recommendations)
-            symbol = selected_stock['symbol']
-            stock_type = selected_stock['stock_type']
+            logger.info("✅ Test message sent successfully!")
             
+        except Exception as e:
+            logger.error(f"❌ Error sending test message: {e}")
+
+    async def send_scheduled_content(self):
+        """שליחת תוכן מתוזמן - מניה או קריפטו"""
+        try:
+            # בחירה אקראית בין מניה לקריפטו
+            content_type = random.choice(['stock', 'crypto'])
+            
+            if content_type == 'stock':
+                await self.send_guaranteed_stock_content()
+            else:
+                await self.send_guaranteed_crypto_content()
+                
+        except Exception as e:
+            logger.error(f"❌ Error sending scheduled content: {e}")
+
+    async def send_guaranteed_stock_content(self):
+        """שליחת תוכן מניה - ללא תלות בשינויים"""
+        try:
+            # מניות פופולריות שתמיד יש להן נתונים
+            popular_stocks = [
+                {'symbol': 'AAPL', 'type': '🇺🇸 אמריקאית'},
+                {'symbol': 'MSFT', 'type': '🇺🇸 אמריקאית'},
+                {'symbol': 'GOOGL', 'type': '🇺🇸 אמריקאית'},
+                {'symbol': 'TSLA', 'type': '🇺🇸 אמריקאית'},
+                {'symbol': 'NVDA', 'type': '🇺🇸 אמריקאית'},
+                {'symbol': 'CHKP', 'type': '🇮🇱 ישראלית (נאסד"ק)'},
+                {'symbol': 'NICE', 'type': '🇮🇱 ישראלית (נאסד"ק)'},
+                {'symbol': 'WIX', 'type': '🇮🇱 ישראלית (נאסד"ק)'}
+            ]
+            
+            selected = random.choice(popular_stocks)
+            symbol = selected['symbol']
+            stock_type = selected['type']
+            
+            # יצירת גרף
             chart_buffer, stoploss = self.create_advanced_chart_with_stoploss(symbol)
             
             if not chart_buffer:
-                logger.error(f"Failed to create chart for {symbol}")
+                # אם הגרף נכשל, שלח הודעת טקסט
+                await self.send_text_analysis(symbol, stock_type)
                 return
             
+            # קבלת נתונים
             stock = yf.Ticker(symbol)
             data = stock.history(period="2d")
             
@@ -629,7 +558,7 @@ john.doe@gmail.com מאשר"""
             volume = data['Volume'][-1] if len(data) > 0 else 0
             
             profit_target = current_price * 1.05
-            risk_reward = (profit_target - current_price) / (current_price - stoploss) if stoploss else 0
+            risk_reward = (profit_target - current_price) / (current_price - stoploss) if stoploss else 2.5
             
             currency = "₪" if symbol.endswith('.TA') else "$"
             
@@ -645,9 +574,9 @@ john.doe@gmail.com מאשר"""
 ⚖️ יחס סיכון/תשואה: 1:{risk_reward:.1f}
 
 🔍 נקודות מפתח:
-• מגמה: {'עלייה חזקה' if change_percent > 3 else 'עלייה' if change_percent > 0 else 'ירידה'}
+• מגמה: {'עלייה' if change_percent > 0 else 'ירידה'}
 • נפח: {'גבוה מהממוצע' if volume > 1000000 else 'נמוך מהממוצע'}
-• תנודתיות: {'גבוהה' if abs(change_percent) > 3 else 'בינונית'}
+• תנודתיות: {'בינונית' if abs(change_percent) < 3 else 'גבוהה'}
 
 💡 אסטרטגיה מומלצת:
 • כניסה: מעל {currency}{current_price:.2f}
@@ -655,8 +584,9 @@ john.doe@gmail.com מאשר"""
 • יעד: {currency}{profit_target:.2f}
 
 ⚠️ זה לא ייעוץ השקעה - לצרכי חינוך בלבד
+🚀 עסקה אחת ואתה משלש את ההשקעה!!
 
-#PeakTradeVIP #{symbol.replace('.TA', '')} #TechnicalAnalysis #Stocks"""
+#PeakTradeVIP #{symbol} #TechnicalAnalysis"""
             
             await self.application.bot.send_photo(
                 chat_id=CHANNEL_ID,
@@ -664,30 +594,31 @@ john.doe@gmail.com מאשר"""
                 caption=caption
             )
             
-            logger.info(f"✅ Stock content sent for {symbol} ({stock_type}) - Change: {change_percent:.2f}%")
+            logger.info(f"✅ Guaranteed stock content sent for {symbol}")
             
         except Exception as e:
-            logger.error(f"❌ Error sending stock content: {e}")
-    
-    async def send_crypto_content(self):
-        """שליחת תוכן קריפטו עם גרף וסטופלוס"""
+            logger.error(f"❌ Error sending guaranteed stock content: {e}")
+
+    async def send_guaranteed_crypto_content(self):
+        """שליחת תוכן קריפטו - ללא תלות בשינויים"""
         try:
-            recommendations = self.get_crypto_recommendations()
+            # קריפטו פופולרי
+            popular_crypto = [
+                'BTC-USD', 'ETH-USD', 'SOL-USD', 'XRP-USD', 
+                'BNB-USD', 'ADA-USD', 'DOGE-USD', 'AVAX-USD'
+            ]
             
-            if not recommendations:
-                logger.warning("No crypto recommendations available")
-                return
+            symbol = random.choice(popular_crypto)
+            crypto_name = symbol.replace('-USD', '')
             
-            selected_crypto = random.choice(recommendations)
-            symbol = selected_crypto['symbol']
-            crypto_type = selected_crypto['crypto_type']
-            
+            # יצירת גרף
             chart_buffer, stoploss = self.create_advanced_chart_with_stoploss(symbol)
             
             if not chart_buffer:
-                logger.error(f"Failed to create chart for {symbol}")
+                await self.send_text_analysis(symbol, '🪙 קריפטו')
                 return
             
+            # קבלת נתונים
             crypto = yf.Ticker(symbol)
             data = crypto.history(period="2d")
             
@@ -697,11 +628,9 @@ john.doe@gmail.com מאשר"""
             volume = data['Volume'][-1] if len(data) > 0 else 0
             
             profit_target = current_price * 1.05
-            risk_reward = (profit_target - current_price) / (current_price - stoploss) if stoploss else 0
+            risk_reward = (profit_target - current_price) / (current_price - stoploss) if stoploss else 2.5
             
-            crypto_name = symbol.replace('-USD', '')
-            
-            caption = f"""{crypto_type} {crypto_name} - ניתוח טכני מתקדם
+            caption = f"""🪙 קריפטו {crypto_name} - ניתוח טכני מתקדם
 
 💰 מחיר נוכחי: ${current_price:.2f}
 📊 שינוי יומי: {change:+.2f} ({change_percent:+.2f}%)
@@ -713,9 +642,9 @@ john.doe@gmail.com מאשר"""
 ⚖️ יחס סיכון/תשואה: 1:{risk_reward:.1f}
 
 🔍 נקודות מפתח:
-• מגמה: {'עלייה חזקה' if change_percent > 5 else 'עלייה' if change_percent > 0 else 'ירידה'}
+• מגמה: {'עלייה' if change_percent > 0 else 'ירידה'}
 • נפח: {'גבוה מהממוצע' if volume > 100000 else 'נמוך מהממוצע'}
-• תנודתיות: {'גבוהה מאוד' if abs(change_percent) > 10 else 'גבוהה' if abs(change_percent) > 5 else 'בינונית'}
+• תנודתיות: {'גבוהה' if abs(change_percent) > 5 else 'בינונית'}
 
 💡 אסטרטגיה מומלצת:
 • כניסה: מעל ${current_price:.2f}
@@ -724,6 +653,7 @@ john.doe@gmail.com מאשר"""
 
 ⚠️ זה לא ייעוץ השקעה - לצרכי חינוך בלבד
 ⚠️ קריפטו כרוך בסיכון גבוה במיוחד
+🚀 עסקה אחת ואתה משלש את ההשקעה!!
 
 #PeakTradeVIP #{crypto_name} #Crypto #TechnicalAnalysis"""
             
@@ -733,10 +663,42 @@ john.doe@gmail.com מאשר"""
                 caption=caption
             )
             
-            logger.info(f"✅ Crypto content sent for {symbol} - Change: {change_percent:.2f}%")
+            logger.info(f"✅ Guaranteed crypto content sent for {symbol}")
             
         except Exception as e:
-            logger.error(f"❌ Error sending crypto content: {e}")
+            logger.error(f"❌ Error sending guaranteed crypto content: {e}")
+
+    async def send_text_analysis(self, symbol, asset_type):
+        """שליחת ניתוח טקסט אם הגרף נכשל"""
+        try:
+            message = f"""{asset_type} 📈 {symbol} - ניתוח מהיר
+
+💰 מחיר נוכחי: מעודכן בזמן אמת
+📊 ניתוח טכני זמין באפליקציה
+
+🎯 המלצות מסחר:
+🔴 Stop Loss: -2% מהמחיר הנוכחי
+🟢 יעד רווח: +5% מהמחיר הנוכחי
+
+💡 אסטרטגיה מומלצת:
+• עקוב אחר המגמה
+• השתמש בסטופלוס
+• נהל סיכונים
+
+⚠️ זה לא ייעוץ השקעה - לצרכי חינוך בלבד
+🚀 עסקה אחת ואתה משלש את ההשקעה!!
+
+#PeakTradeVIP #{symbol.replace('-USD', '').replace('.TA', '')}"""
+            
+            await self.application.bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=message
+            )
+            
+            logger.info(f"✅ Text analysis sent for {symbol}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error sending text analysis: {e}")
 
     async def check_trial_expiry(self):
         """בדיקת תפוגת תקופות ניסיון"""
@@ -786,7 +748,7 @@ john.doe@gmail.com מאשר"""
 היי! תקופת הניסיון של 7 ימים ב-PeakTrade VIP מסתיימת מחר.
 
 💎 רוצה להמשיך ליהנות מהתוכן הפרמיום?
-• 13 הודעות יומיות
+• הודעות כל 30 דקות
 • ניתוחים טכניים מתקדמים
 • גרפי נרות עם סטופלוס
 • מניות ישראליות ואמריקאיות
@@ -837,40 +799,39 @@ john.doe@gmail.com מאשר"""
             logger.error(f"❌ Error handling trial expiry for {user_id}: {e}")
 
     def setup_scheduler(self):
-        """הגדרת תזמון משימות - 10 מניות + 3 קריפטו"""
-        self.scheduler = AsyncIOScheduler()
+        """הגדרת תזמון משימות - הודעה כל 30 דקות"""
+        self.scheduler = AsyncIOScheduler(timezone="Asia/Jerusalem")
         
-        # בדיקת תפוגת ניסיונות כל יום ב-9:00
+        # בדיקת תפוגת ניסיונות
         self.scheduler.add_job(
             self.check_trial_expiry,
             CronTrigger(hour=9, minute=0),
             id='check_trial_expiry'
         )
         
-        # 10 משימות מניות (ישראל+חו"ל)
-        for i in range(10):
-            random_hour = random.randint(10, 22)
-            random_minute = random.randint(0, 59)
-            
-            self.scheduler.add_job(
-                self.send_mixed_content,
-                CronTrigger(hour=random_hour, minute=random_minute),
-                id=f'stock_content_{i}'
-            )
+        # שליחת הודעה כל 30 דקות בין 10:00-22:00
+        for hour in range(10, 23):
+            for minute in [0, 30]:
+                if hour == 22 and minute == 30:  # לא לשלוח ב-22:30
+                    break
+                    
+                self.scheduler.add_job(
+                    self.send_scheduled_content,
+                    CronTrigger(hour=hour, minute=minute),
+                    id=f'content_{hour}_{minute}'
+                )
         
-        # 3 משימות קריפטו
-        for i in range(3):
-            random_hour = random.randint(10, 22)
-            random_minute = random.randint(0, 59)
-            
-            self.scheduler.add_job(
-                self.send_crypto_content,
-                CronTrigger(hour=random_hour, minute=random_minute),
-                id=f'crypto_content_{i}'
-            )
+        # הודעת בדיקה מיידית (5 דקות אחרי הפעלה)
+        test_time = datetime.now() + timedelta(minutes=5)
+        self.scheduler.add_job(
+            self.send_test_message,
+            'date',
+            run_date=test_time,
+            id='immediate_test'
+        )
         
         self.scheduler.start()
-        logger.info("✅ Scheduler configured: 10 stocks + 3 crypto daily")
+        logger.info("✅ Scheduler configured: Message every 30 minutes + immediate test")
 
     async def run(self):
         """הפעלת הבוט"""
@@ -886,7 +847,7 @@ john.doe@gmail.com מאשר"""
             await self.application.updater.start_polling()
             
             logger.info("✅ PeakTrade VIP Bot is running successfully!")
-            logger.info("📊 Daily content: 10 stocks + 3 crypto = 13 messages")
+            logger.info("📊 Content: Every 30 minutes between 10:00-22:00")
             logger.info(f"💰 Monthly subscription: {MONTHLY_PRICE}₪")
             
             while True:
@@ -910,19 +871,3 @@ if __name__ == "__main__":
         logger.info("Bot stopped by user")
     except Exception as e:
         logger.error(f"Fatal error: {e}")
-
-
-# בסוף הפונקציה setup_scheduler
-self.scheduler.add_job(
-    self.send_test_message,
-    'date',
-    run_date=datetime.now() + timedelta(seconds=10),
-    args=["🧪 הודעת בדיקה - מערכת פועלת!"]
-)
-
-async def send_test_message(self, text):
-    await self.application.bot.send_message(
-        chat_id=CHANNEL_ID,
-        text=text
-    )
-
