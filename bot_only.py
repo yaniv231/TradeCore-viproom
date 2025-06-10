@@ -498,29 +498,93 @@ john.doe@gmail.com מאשר"""
         
         logger.info("✅ All handlers configured")
 
-    async def send_test_message(self):
-        """שליחת הודעת בדיקה מיידית"""
+    async def send_immediate_test_with_chart(self):
+        """שליחת הודעת בדיקה מיידית עם גרף מקצועי"""
+        try:
+            # יצירת דוגמה עם AAPL
+            stock = yf.Ticker("AAPL")
+            data = stock.history(period="30d")
+            
+            if not data.empty:
+                current_price = data['Close'][-1]
+                entry_price = current_price * 1.02
+                stop_loss = current_price * 0.95
+                target1 = current_price * 1.08
+                target2 = current_price * 1.15
+                
+                # יצירת גרף מקצועי
+                chart_buffer = self.create_professional_chart("AAPL", data, entry_price, stop_loss, target1, target2)
+                
+                if chart_buffer:
+                    caption = f"""🔥 🇺🇸 אמריקאית AAPL - בדיקת מערכת PeakTrade VIP
+
+💎 סקטור: טכנולוגיה | מחיר נוכחי: ${current_price:.2f}
+
+🧪 זוהי הודעת בדיקה לוודא שהמערכת עובדת!
+
+🎯 אסטרטגיית כניסה LIVE:
+🟢 כניסה: ${entry_price:.2f} (מעל המחיר הנוכחי)
+🔴 סטופלוס: ${stop_loss:.2f} (-5% הגנה)
+🎯 יעד ראשון: ${target1:.2f} (+8% רווח)
+🚀 יעד שני: ${target2:.2f} (+15% רווח)
+
+✅ המערכת פועלת בהצלחה!
+📊 הודעות כל 30 דקות בין 10:00-22:00
+💰 מחיר מנוי: 120₪/חודש
+🚀 עסקה אחת ואתה משלש את ההשקעה!!
+
+⚠️ זוהי הודעת בדיקה - המערכת מוכנה לפעולה!
+
+#PeakTradeVIP #TestMessage #SystemCheck"""
+                    
+                    await self.application.bot.send_photo(
+                        chat_id=CHANNEL_ID,
+                        photo=chart_buffer,
+                        caption=caption
+                    )
+                    
+                    logger.info("✅ Immediate test with chart sent successfully!")
+                else:
+                    # אם הגרף נכשל, שלח הודעת טקסט
+                    await self.send_immediate_test_text()
+            else:
+                await self.send_immediate_test_text()
+                
+        except Exception as e:
+            logger.error(f"❌ Error sending immediate test with chart: {e}")
+            await self.send_immediate_test_text()
+
+    async def send_immediate_test_text(self):
+        """שליחת הודעת בדיקה טקסט אם הגרף נכשל"""
         try:
             test_message = """🧪 בדיקת מערכת PeakTrade VIP
 
-✅ הבוט פעיל ועובד!
+✅ הבוט פעיל ועובד מושלם!
 📊 מערכת תזמון פועלת
 ⏰ הודעות כל 30 דקות בין 10:00-22:00
+
+🎯 מה תקבלו:
+• גרפי נרות מקצועיים
+• נקודות כניסה ויציאה מדויקות
+• המלצות בלעדיות לחברי VIP
+• ניתוח טכני מתקדם
 
 💰 מחיר מנוי: 120₪/חודש
 🚀 עסקה אחת ואתה משלש את ההשקעה!!
 
-#TestMessage #PeakTradeVIP"""
+⚠️ זוהי הודעת בדיקה - המערכת מוכנה לפעולה!
+
+#TestMessage #PeakTradeVIP #SystemReady"""
             
             await self.application.bot.send_message(
                 chat_id=CHANNEL_ID,
                 text=test_message
             )
             
-            logger.info("✅ Test message sent successfully!")
+            logger.info("✅ Immediate test text sent successfully!")
             
         except Exception as e:
-            logger.error(f"❌ Error sending test message: {e}")
+            logger.error(f"❌ Error sending immediate test text: {e}")
 
     async def send_scheduled_content(self):
         """שליחת תוכן מתוזמן - מניה או קריפטו"""
@@ -869,7 +933,7 @@ john.doe@gmail.com מאשר"""
             logger.error(f"❌ Error handling trial expiry for {user_id}: {e}")
 
     def setup_scheduler(self):
-        """הגדרת תזמון משימות - הודעה כל 30 דקות"""
+        """הגדרת תזמון משימות - הודעה כל 30 דקות + בדיקה מיידית"""
         self.scheduler = AsyncIOScheduler(timezone="Asia/Jerusalem")
         
         # בדיקת תפוגת ניסיונות
@@ -891,17 +955,17 @@ john.doe@gmail.com מאשר"""
                     id=f'content_{hour}_{minute}'
                 )
         
-        # הודעת בדיקה מיידית (5 דקות אחרי הפעלה)
-        test_time = datetime.now() + timedelta(minutes=5)
+        # הודעת בדיקה מיידית (1 דקה אחרי הפעלה)
+        test_time = datetime.now() + timedelta(minutes=1)
         self.scheduler.add_job(
-            self.send_test_message,
+            self.send_immediate_test_with_chart,
             'date',
             run_date=test_time,
             id='immediate_test'
         )
         
         self.scheduler.start()
-        logger.info("✅ Scheduler configured: Message every 30 minutes + immediate test")
+        logger.info("✅ Scheduler configured: Message every 30 minutes + immediate test in 1 minute")
 
     async def run(self):
         """הפעלת הבוט"""
@@ -918,6 +982,7 @@ john.doe@gmail.com מאשר"""
             
             logger.info("✅ PeakTrade VIP Bot is running successfully!")
             logger.info("📊 Content: Every 30 minutes between 10:00-22:00")
+            logger.info("🧪 Test message will be sent in 1 minute")
             logger.info(f"💰 Monthly subscription: {MONTHLY_PRICE}₪")
             
             while True:
