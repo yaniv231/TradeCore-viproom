@@ -498,21 +498,22 @@ john.doe@gmail.com מאשר"""
             logger.info("🧪 Attempting to send immediate test message with chart...")
             
             # יצירת דוגמה עם AAPL
-            stock = yf.Ticker("AAPL")
-            data = stock.history(period="30d")
-            
-            if not data.empty:
-                current_price = data['Close'][-1]
-                entry_price = current_price * 1.02  # כניסה 2% מעל
-                stop_loss = current_price * 0.95    # סטופלוס 5% מתחת
-                target1 = current_price * 1.08      # יעד ראשון 8%
-                target2 = current_price * 1.15      # יעד שני 15%
+            try:
+                stock = yf.Ticker("AAPL")
+                data = stock.history(period="30d")
                 
-                # יצירת גרף מקצועי
-                chart_buffer = self.create_professional_chart_with_prices("AAPL", data, current_price, entry_price, stop_loss, target1, target2)
-                
-                if chart_buffer:
-                    caption = f"""🔥 🇺🇸 אמריקאית AAPL - בדיקת מערכת PeakTrade VIP
+                if not data.empty:
+                    current_price = data['Close'][-1]
+                    entry_price = current_price * 1.02  # כניסה 2% מעל
+                    stop_loss = current_price * 0.95    # סטופלוס 5% מתחת
+                    target1 = current_price * 1.08      # יעד ראשון 8%
+                    target2 = current_price * 1.15      # יעד שני 15%
+                    
+                    # יצירת גרף מקצועי
+                    chart_buffer = self.create_professional_chart_with_prices("AAPL", data, current_price, entry_price, stop_loss, target1, target2)
+                    
+                    if chart_buffer:
+                        caption = f"""🔥 🇺🇸 אמריקאית AAPL - בדיקת מערכת PeakTrade VIP
 
 💎 סקטור: טכנולוגיה | מחיר נוכחי: ${current_price:.2f}
 
@@ -535,17 +536,20 @@ john.doe@gmail.com מאשר"""
 ⚠️ זוהי הודעת בדיקה - המערכת מוכנה לפעולה!
 
 #PeakTradeVIP #TestMessage #SystemCheck"""
-                    
-                    await self.application.bot.send_photo(
-                        chat_id=CHANNEL_ID,
-                        photo=chart_buffer,
-                        caption=caption
-                    )
-                    
-                    logger.info("✅ Immediate test with chart sent successfully!")
+                        
+                        await self.application.bot.send_photo(
+                            chat_id=CHANNEL_ID,
+                            photo=chart_buffer,
+                            caption=caption
+                        )
+                        
+                        logger.info("✅ Immediate test with chart sent successfully!")
+                    else:
+                        await self.send_immediate_test_text()
                 else:
                     await self.send_immediate_test_text()
-            else:
+            except Exception as yf_error:
+                logger.error(f"❌ yFinance error in test: {yf_error}")
                 await self.send_immediate_test_text()
                 
         except Exception as e:
@@ -613,7 +617,6 @@ john.doe@gmail.com מאשר"""
                 {'symbol': 'TSLA', 'type': '🇺🇸 אמריקאית', 'sector': 'רכב חשמלי'},
                 {'symbol': 'NVDA', 'type': '🇺🇸 אמריקאית', 'sector': 'AI/שבבים'},
                 {'symbol': 'CHKP', 'type': '🇮🇱 ישראלית (נאסד"ק)', 'sector': 'סייבר'},
-                {'symbol': 'NICE', 'type': '🇮🇱 ישראלית (נאסד"ק)', 'sector': 'תוכנה'},
                 {'symbol': 'WIX', 'type': '🇮🇱 ישראלית (נאסד"ק)', 'sector': 'אינטרנט'}
             ]
             
@@ -621,23 +624,18 @@ john.doe@gmail.com מאשר"""
             symbol = selected['symbol']
             stock_type = selected['type']
             sector = selected['sector']
-
+            
+            # קבלת נתונים מפורטים עם טיפול בשגיאות
             try:
-            stock = yf.Ticker(symbol)
-            data = stock.history(period="30d")
-            if data.empty:
-                raise ValueError("No data available")
-        except Exception as yf_error:
-            logger.error(f"❌ yFinance error for {symbol}: {yf_error}")
-            await self.send_text_analysis(symbol, stock_type)
-            return
-            
-            # קבלת נתונים מפורטים
-            stock = yf.Ticker(symbol)
-            data = stock.history(period="30d")
-            
-            if data.empty:
-                logger.warning(f"No data for {symbol}")
+                stock = yf.Ticker(symbol)
+                data = stock.history(period="30d")
+                
+                if data.empty:
+                    logger.warning(f"No data for {symbol}")
+                    return
+                    
+            except Exception as yf_error:
+                logger.error(f"❌ yFinance error for {symbol}: {yf_error}")
                 return
             
             current_price = data['Close'][-1]
@@ -683,9 +681,6 @@ john.doe@gmail.com מאשר"""
 🚀 יעד שני: {currency}{profit_target_2:.2f} (רווח מקסימלי)
 
 ⚖️ יחס סיכון/תשואה: 1:{risk_reward:.1f}
-
-import time
-await asyncio.sleep(1)  # השהייה של שניה בין בקשות
 
 💡 המלצה בלעדית PeakTrade:
 {"🔥 כניסה מומלצת - מגמה חזקה!" if change_percent > 2 else "⚡ המתן לפריצה מעל נקודת הכניסה" if change_percent > 0 else "⏳ המתן לייצוב לפני כניסה"}
@@ -741,12 +736,17 @@ await asyncio.sleep(1)  # השהייה של שניה בין בקשות
             crypto_name = selected['name']
             crypto_type = selected['type']
             
-            # קבלת נתונים מפורטים
-            crypto = yf.Ticker(symbol)
-            data = crypto.history(period="30d")
-            
-            if data.empty:
-                logger.warning(f"No data for {symbol}")
+            # קבלת נתונים מפורטים עם טיפול בשגיאות
+            try:
+                crypto = yf.Ticker(symbol)
+                data = crypto.history(period="30d")
+                
+                if data.empty:
+                    logger.warning(f"No data for {symbol}")
+                    return
+                    
+            except Exception as yf_error:
+                logger.error(f"❌ yFinance error for {symbol}: {yf_error}")
                 return
             
             current_price = data['Close'][-1]
