@@ -15,6 +15,7 @@ import io
 import random
 import requests
 import pandas as pd
+import finnhub
 
 # הגדרת לוגינג
 logging.basicConfig(
@@ -28,7 +29,7 @@ BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN') or "7619055199:AAEL28DJ-E1Xl7iEfdPqT
 CHANNEL_ID = os.getenv('CHANNEL_ID') or "-1002886874719"
 GOOGLE_CREDENTIALS = os.getenv('GOOGLE_CREDENTIALS')
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
-ALPHA_VANTAGE_API_KEY = os.getenv('ALPHA_VANTAGE_API_KEY') or "demo"
+FINNHUB_API_KEY = os.getenv('FINNHUB_API_KEY') or "demo"
 
 # הגדרות תשלום
 PAYPAL_PAYMENT_LINK = "https://paypal.me/yourpaypal/120"
@@ -37,38 +38,41 @@ MONTHLY_PRICE = 120
 # מצבי השיחה
 WAITING_FOR_EMAIL = 1
 
-class AlphaVantageAPI:
+class FinnhubAPI:
     def __init__(self, api_key):
-        self.api_key = api_key
-        self.base_url = "https://www.alphavantage.co/query"
+        self.client = finnhub.Client(api_key=api_key)
     
     def get_stock_data(self, symbol):
-        """קבלת נתוני מניה מ-Alpha Vantage"""
+        """קבלת נתוני מניה מ-Finnhub"""
         try:
-            params = {
-                'function': 'TIME_SERIES_DAILY',
-                'symbol': symbol,
-                'apikey': self.api_key,
-                'outputsize': 'compact'
-            }
+            # קבלת נתונים היסטוריים (30 ימים)
+            end_time = int(datetime.now().timestamp())
+            start_time = int((datetime.now() - timedelta(days=30)).timestamp())
             
-            response = requests.get(self.base_url, params=params)
-            data = response.json()
+            # קבלת נתוני נרות
+            candles = self.client.stock_candles(symbol, 'D', start_time, end_time)
             
-            if 'Time Series (Daily)' in data:
-                time_series = data['Time Series (Daily)']
-                df = pd.DataFrame.from_dict(time_series, orient='index')
-                df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-                df.index = pd.to_datetime(df.index)
-                df = df.astype(float)
-                df = df.sort_index()
-                return df.tail(30)
+            if candles['s'] == 'ok' and len(candles['c']) > 0:
+                # יצירת DataFrame
+                df = pd.DataFrame({
+                    'Open': candles['o'],
+                    'High': candles['h'],
+                    'Low': candles['l'],
+                    'Close': candles['c'],
+                    'Volume': candles['v']
+                })
+                
+                # יצירת אינדקס תאריכים
+                timestamps = [datetime.fromtimestamp(ts) for ts in candles['t']]
+                df.index = pd.DatetimeIndex(timestamps)
+                
+                return df
             else:
-                logger.error(f"No data for {symbol}: {data}")
+                logger.error(f"No Finnhub data for {symbol}")
                 return None
                 
         except Exception as e:
-            logger.error(f"Alpha Vantage error for {symbol}: {e}")
+            logger.error(f"Finnhub error for {symbol}: {e}")
             return None
 
 class PeakTradeBot:
@@ -77,7 +81,7 @@ class PeakTradeBot:
         self.scheduler = None
         self.google_client = None
         self.sheet = None
-        self.alpha_api = AlphaVantageAPI(ALPHA_VANTAGE_API_KEY)
+        self.finnhub_api = FinnhubAPI(FINNHUB_API_KEY)
         self.setup_google_sheets()
         
     def setup_google_sheets(self):
@@ -152,7 +156,7 @@ class PeakTradeBot:
                     fontsize=18, color='cyan', fontweight='bold', 
                     verticalalignment='top', alpha=0.9)
             
-            ax.text(0.02, 0.02, 'Professional Analysis', transform=ax.transAxes, 
+            ax.text(0.02, 0.02, 'Powered by Finnhub', transform=ax.transAxes, 
                     fontsize=14, color='lime', fontweight='bold', 
                     verticalalignment='bottom', alpha=0.9)
             
@@ -328,13 +332,11 @@ class PeakTradeBot:
     async def remove_user_after_trial(self, user_id, row_index=None):
         """הסרת משתמש מהערוץ לאחר סיום תקופת ניסיון ללא תשלום"""
         try:
-            # הסרת המשתמש מהערוץ
             await self.application.bot.ban_chat_member(
                 chat_id=CHANNEL_ID,
                 user_id=user_id
             )
             
-            # שליחת הודעת פרידה
             goodbye_message = """👋 תקופת הניסיון שלך הסתיימה
 
 הוסרת מערוץ PeakTrade VIP מכיוון שלא חידשת את המנוי.
@@ -351,9 +353,8 @@ class PeakTradeBot:
                     text=goodbye_message
                 )
             except:
-                pass  # אם לא ניתן לשלוח הודעה פרטית
+                pass
             
-            # עדכון סטטוס ב-Google Sheets
             if row_index and self.sheet:
                 current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 try:
@@ -384,11 +385,8 @@ class PeakTradeBot:
                             trial_end = datetime.strptime(trial_end_str, "%Y-%m-%d %H:%M:%S")
                             user_id = record.get('telegram_user_id')
                             
-                            # יום לפני סיום הניסיון - שליחת תזכורת
                             if (trial_end - current_time).days == 1:
                                 await self.send_trial_expiry_reminder(user_id)
-                            
-                            # יום אחרי סיום הניסיון - הסרת משתמש אם לא שילם
                             elif current_time > trial_end:
                                 await self.remove_user_after_trial(user_id, i + 2)
                                 
@@ -409,7 +407,6 @@ class PeakTradeBot:
         choice = query.data
         
         if choice == "pay_yes":
-            # המשתמש בחר לשלם
             keyboard = [
                 [InlineKeyboardButton("💳 PayPal", url=PAYPAL_PAYMENT_LINK)],
                 [InlineKeyboardButton("📱 Google Pay", callback_data="gpay_payment")],
@@ -435,7 +432,6 @@ class PeakTradeBot:
             )
             
         elif choice == "pay_no":
-            # המשתמש בחר לא לשלם
             goodbye_message = """👋 תודה שניסית את PeakTrade VIP!
 
 הבנו שאתה לא מעוניין להמשיך כרגע.
@@ -449,13 +445,11 @@ class PeakTradeBot:
             await query.edit_message_text(text=goodbye_message)
             
         elif choice == "gpay_payment":
-            # Google Pay (לעתיד - כרגע הפניה ל-PayPal)
             await query.edit_message_text(
                 text=f"📱 Google Pay זמין בקרוב!\n\nבינתיים אפשר לשלם דרך PayPal:\n{PAYPAL_PAYMENT_LINK}"
             )
             
         elif choice == "pay_cancel":
-            # ביטול התשלום
             await query.edit_message_text(
                 text="❌ התשלום בוטל.\n\nתקבל תזכורת נוספת מחר."
             )
@@ -509,16 +503,18 @@ class PeakTradeBot:
         logger.info("✅ All handlers configured")
 
     async def send_guaranteed_stock_content(self):
-        """שליחת תוכן מניה מקצועי"""
+        """שליחת תוכן מניה מקצועי עם Finnhub"""
         try:
-            logger.info("📈 Preparing stock content...")
+            logger.info("📈 Preparing stock content with Finnhub...")
             
             premium_stocks = [
                 {'symbol': 'AAPL', 'type': '🇺🇸 אמריקאית', 'sector': 'טכנולוגיה'},
                 {'symbol': 'MSFT', 'type': '🇺🇸 אמריקאית', 'sector': 'טכנולוגיה'},
                 {'symbol': 'GOOGL', 'type': '🇺🇸 אמריקאית', 'sector': 'טכנולוגיה'},
                 {'symbol': 'TSLA', 'type': '🇺🇸 אמריקאית', 'sector': 'רכב חשמלי'},
-                {'symbol': 'NVDA', 'type': '🇺🇸 אמריקאית', 'sector': 'AI/שבבים'}
+                {'symbol': 'NVDA', 'type': '🇺🇸 אמריקאית', 'sector': 'AI/שבבים'},
+                {'symbol': 'AMZN', 'type': '🇺🇸 אמריקאית', 'sector': 'מסחר אלקטרוני'},
+                {'symbol': 'META', 'type': '🇺🇸 אמריקאית', 'sector': 'רשתות חברתיות'}
             ]
             
             selected = random.choice(premium_stocks)
@@ -526,14 +522,15 @@ class PeakTradeBot:
             stock_type = selected['type']
             sector = selected['sector']
             
-            data = self.alpha_api.get_stock_data(symbol)
+            data = self.finnhub_api.get_stock_data(symbol)
             
             if data is None or data.empty:
-                logger.warning(f"No data for {symbol}")
+                logger.warning(f"No Finnhub data for {symbol}")
                 await self.send_text_analysis(symbol, stock_type)
                 return
             
-            await asyncio.sleep(2)
+            # השהייה קצרה כדי לא לעבור על מגבלות API
+            await asyncio.sleep(1)
             
             current_price = data['Close'][-1]
             change = data['Close'][-1] - data['Close'][-2] if len(data) > 1 else 0
@@ -555,7 +552,6 @@ class PeakTradeBot:
             
             chart_buffer = self.create_professional_chart_with_prices(symbol, data, current_price, entry_price, stop_loss, profit_target_1, profit_target_2)
             
-            # הודעה ידידותית ומקצועית
             caption = f"""🔥 {stock_type} {symbol} - המלצת השקעה חמה!
 
 💎 סקטור: {sector} | מחיר נוכחי: ${current_price:.2f}
@@ -590,16 +586,16 @@ class PeakTradeBot:
                     photo=chart_buffer,
                     caption=caption
                 )
-                logger.info(f"✅ Stock content sent for {symbol}")
+                logger.info(f"✅ Finnhub stock content sent for {symbol}")
             else:
                 await self.application.bot.send_message(
                     chat_id=CHANNEL_ID,
                     text=caption
                 )
-                logger.info(f"✅ Stock content (text) sent for {symbol}")
+                logger.info(f"✅ Finnhub stock content (text) sent for {symbol}")
             
         except Exception as e:
-            logger.error(f"❌ Error sending stock content: {e}")
+            logger.error(f"❌ Error sending Finnhub stock content: {e}")
 
     async def send_text_analysis(self, symbol, asset_type):
         """שליחת ניתוח טקסט אם הגרף נכשל"""
@@ -633,8 +629,8 @@ class PeakTradeBot:
             logger.error(f"❌ Error sending text analysis: {e}")
 
     async def run(self):
-        """הפעלת הבוט עם שליחה מאולצת"""
-        logger.info("🚀 Starting PeakTrade VIP Bot...")
+        """הפעלת הבוט עם Finnhub"""
+        logger.info("🚀 Starting PeakTrade VIP Bot with Finnhub...")
         
         self.application = Application.builder().token(BOT_TOKEN).build()
         self.setup_handlers()
@@ -642,7 +638,6 @@ class PeakTradeBot:
         # הגדרת scheduler לבדיקת תפוגת ניסיונות
         self.scheduler = AsyncIOScheduler(timezone="Asia/Jerusalem")
         
-        # בדיקה יומית בשעה 9:00 בבוקר
         self.scheduler.add_job(
             self.check_trial_expiry,
             CronTrigger(hour=9, minute=0),
@@ -658,6 +653,7 @@ class PeakTradeBot:
             await self.application.updater.start_polling()
             
             logger.info("✅ PeakTrade VIP Bot is running successfully!")
+            logger.info("📊 Finnhub API integrated - 60 calls/minute")
             logger.info("📊 Content: Every 30 minutes between 10:00-22:00")
             logger.info("⏰ Trial expiry check: Daily at 9:00 AM")
             logger.info(f"💰 Monthly subscription: {MONTHLY_PRICE}₪")
@@ -666,7 +662,7 @@ class PeakTradeBot:
             await asyncio.sleep(10)
             try:
                 await self.send_guaranteed_stock_content()
-                logger.info("✅ Immediate test sent")
+                logger.info("✅ Immediate Finnhub test sent")
             except Exception as e:
                 logger.error(f"❌ Test error: {e}")
             
@@ -676,19 +672,17 @@ class PeakTradeBot:
             while True:
                 current_time = datetime.now()
                 
-                # בדוק אם עברו 30 דקות מההודעה האחרונה
                 if (current_time - last_send_time).total_seconds() >= 1800:  # 30 דקות
-                    # בדוק אם השעה בין 10:00-22:00
                     if 10 <= current_time.hour < 22:
                         try:
-                            logger.info(f"🕐 Forcing content at {current_time.strftime('%H:%M')}")
+                            logger.info(f"🕐 Forcing Finnhub content at {current_time.strftime('%H:%M')}")
                             await self.send_guaranteed_stock_content()
                             last_send_time = current_time
-                            logger.info("✅ Forced content sent successfully!")
+                            logger.info("✅ Forced Finnhub content sent successfully!")
                         except Exception as e:
-                            logger.error(f"❌ Error in forced send: {e}")
+                            logger.error(f"❌ Error in forced Finnhub send: {e}")
                 
-                await asyncio.sleep(60)  # בדוק כל דקה
+                await asyncio.sleep(60)
                 
         except Exception as e:
             logger.error(f"❌ Bot error: {e}")
