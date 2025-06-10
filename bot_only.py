@@ -11,7 +11,6 @@ from google.oauth2.service_account import Credentials
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import yfinance as yf
-import mplfinance as mpf
 import matplotlib.pyplot as plt
 import io
 import random
@@ -30,8 +29,8 @@ GOOGLE_CREDENTIALS = os.getenv('GOOGLE_CREDENTIALS')
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
 
 # הגדרות תשלום
-PAYPAL_PAYMENT_LINK = "https://paypal.me/yourpaypal/120"  # החלף בקישור שלך
-MONTHLY_PRICE = 120  # מחיר חודשי בשקלים
+PAYPAL_PAYMENT_LINK = "https://paypal.me/yourpaypal/120"
+MONTHLY_PRICE = 120
 
 # מצבי השיחה
 WAITING_FOR_EMAIL = 1
@@ -56,21 +55,6 @@ class PeakTradeBot:
                 creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
                 self.google_client = gspread.authorize(creds)
                 self.sheet = self.google_client.open_by_key(SPREADSHEET_ID).sheet1
-                
-                try:
-                    headers = self.sheet.row_values(1)
-                    if not headers:
-                        header_row = [
-                            'telegram_user_id', 'telegram_username', 'email', 
-                            'disclaimer_sent_time', 'confirmation_status', 
-                            'trial_start_date', 'trial_end_date', 'payment_status',
-                            'payment_method', 'payment_date', 'last_update_timestamp'
-                        ]
-                        self.sheet.append_row(header_row)
-                        logger.info("✅ Headers added to Google Sheets")
-                except Exception as e:
-                    logger.error(f"❌ Error checking headers: {e}")
-                
                 logger.info("✅ Google Sheets connected successfully")
             else:
                 logger.warning("⚠️ Google Sheets credentials not found")
@@ -100,7 +84,7 @@ class PeakTradeBot:
             plt.style.use('dark_background')
             fig, ax = plt.subplots(figsize=(14, 10))
             
-            # גרף נרות פשוט
+            # גרף קו פשוט
             ax.plot(data.index, data['Close'], color='white', linewidth=3, label=f'{symbol} Price', alpha=0.9)
             ax.fill_between(data.index, data['Low'], data['High'], alpha=0.2, color='gray', label='Daily Range')
             
@@ -386,7 +370,6 @@ john.doe@gmail.com מאשר"""
         choice = query.data
         
         if choice == "pay_yes":
-            # המשתמש בחר לשלם
             keyboard = [
                 [InlineKeyboardButton("💳 PayPal", url=PAYPAL_PAYMENT_LINK)],
                 [InlineKeyboardButton("📱 Google Pay", callback_data="gpay_payment")],
@@ -412,7 +395,6 @@ john.doe@gmail.com מאשר"""
             )
             
         elif choice == "pay_no":
-            # המשתמש בחר לא לשלם
             await self.handle_trial_expired(user_id, None)
             
             goodbye_message = """👋 תודה שניסית את PeakTrade VIP!
@@ -427,13 +409,11 @@ john.doe@gmail.com מאשר"""
             await query.edit_message_text(text=goodbye_message)
             
         elif choice == "gpay_payment":
-            # Google Pay (לעתיד - כרגע הפניה ל-PayPal)
             await query.edit_message_text(
                 text=f"📱 Google Pay זמין בקרוב!\n\nבינתיים אפשר לשלם דרך PayPal:\n{PAYPAL_PAYMENT_LINK}"
             )
             
         elif choice == "pay_cancel":
-            # ביטול התשלום
             await query.edit_message_text(
                 text="❌ התשלום בוטל.\n\nתקבל תזכורת נוספת מחר."
             )
@@ -498,65 +478,11 @@ john.doe@gmail.com מאשר"""
         
         logger.info("✅ All handlers configured")
 
-    async def send_immediate_test_with_chart(self):
-        """שליחת הודעת בדיקה מיידית עם גרף מקצועי"""
+    async def send_immediate_test_message(self):
+        """שליחת הודעת בדיקה מיידית - פשוטה ויעילה"""
         try:
-            # יצירת דוגמה עם AAPL
-            stock = yf.Ticker("AAPL")
-            data = stock.history(period="30d")
+            logger.info("🧪 Attempting to send immediate test message...")
             
-            if not data.empty:
-                current_price = data['Close'][-1]
-                entry_price = current_price * 1.02
-                stop_loss = current_price * 0.95
-                target1 = current_price * 1.08
-                target2 = current_price * 1.15
-                
-                # יצירת גרף מקצועי
-                chart_buffer = self.create_professional_chart("AAPL", data, entry_price, stop_loss, target1, target2)
-                
-                if chart_buffer:
-                    caption = f"""🔥 🇺🇸 אמריקאית AAPL - בדיקת מערכת PeakTrade VIP
-
-💎 סקטור: טכנולוגיה | מחיר נוכחי: ${current_price:.2f}
-
-🧪 זוהי הודעת בדיקה לוודא שהמערכת עובדת!
-
-🎯 אסטרטגיית כניסה LIVE:
-🟢 כניסה: ${entry_price:.2f} (מעל המחיר הנוכחי)
-🔴 סטופלוס: ${stop_loss:.2f} (-5% הגנה)
-🎯 יעד ראשון: ${target1:.2f} (+8% רווח)
-🚀 יעד שני: ${target2:.2f} (+15% רווח)
-
-✅ המערכת פועלת בהצלחה!
-📊 הודעות כל 30 דקות בין 10:00-22:00
-💰 מחיר מנוי: 120₪/חודש
-🚀 עסקה אחת ואתה משלש את ההשקעה!!
-
-⚠️ זוהי הודעת בדיקה - המערכת מוכנה לפעולה!
-
-#PeakTradeVIP #TestMessage #SystemCheck"""
-                    
-                    await self.application.bot.send_photo(
-                        chat_id=CHANNEL_ID,
-                        photo=chart_buffer,
-                        caption=caption
-                    )
-                    
-                    logger.info("✅ Immediate test with chart sent successfully!")
-                else:
-                    # אם הגרף נכשל, שלח הודעת טקסט
-                    await self.send_immediate_test_text()
-            else:
-                await self.send_immediate_test_text()
-                
-        except Exception as e:
-            logger.error(f"❌ Error sending immediate test with chart: {e}")
-            await self.send_immediate_test_text()
-
-    async def send_immediate_test_text(self):
-        """שליחת הודעת בדיקה טקסט אם הגרף נכשל"""
-        try:
             test_message = """🧪 בדיקת מערכת PeakTrade VIP
 
 ✅ הבוט פעיל ועובד מושלם!
@@ -581,14 +507,16 @@ john.doe@gmail.com מאשר"""
                 text=test_message
             )
             
-            logger.info("✅ Immediate test text sent successfully!")
+            logger.info("✅ Immediate test message sent successfully!")
             
         except Exception as e:
-            logger.error(f"❌ Error sending immediate test text: {e}")
+            logger.error(f"❌ Error sending immediate test message: {e}")
 
     async def send_scheduled_content(self):
         """שליחת תוכן מתוזמן - מניה או קריפטו"""
         try:
+            logger.info("📊 Sending scheduled content...")
+            
             # בחירה אקראית בין מניה לקריפטו
             content_type = random.choice(['stock', 'crypto'])
             
@@ -603,6 +531,8 @@ john.doe@gmail.com מאשר"""
     async def send_guaranteed_stock_content(self):
         """שליחת תוכן מניה מקצועי עם המלצות בלעדיות"""
         try:
+            logger.info("📈 Preparing stock content...")
+            
             # מניות פופולריות עם פוטנציאל רווח
             premium_stocks = [
                 {'symbol': 'AAPL', 'type': '🇺🇸 אמריקאית', 'sector': 'טכנולוגיה'},
@@ -625,6 +555,8 @@ john.doe@gmail.com מאשר"""
             data = stock.history(period="30d")
             
             if data.empty:
+                logger.warning(f"No data for {symbol}, sending text message instead")
+                await self.send_text_analysis(symbol, stock_type)
                 return
             
             current_price = data['Close'][-1]
@@ -650,10 +582,6 @@ john.doe@gmail.com מאשר"""
             
             # יצירת גרף מקצועי עם נקודות כניסה ויציאה
             chart_buffer = self.create_professional_chart(symbol, data, entry_price, stop_loss, profit_target_1, profit_target_2)
-            
-            if not chart_buffer:
-                await self.send_text_analysis(symbol, stock_type)
-                return
             
             currency = "₪" if symbol.endswith('.TA') else "$"
             
@@ -691,13 +619,19 @@ john.doe@gmail.com מאשר"""
 
 #PeakTradeVIP #{symbol} #ExclusiveSignal #LiveAnalysis"""
             
-            await self.application.bot.send_photo(
-                chat_id=CHANNEL_ID,
-                photo=chart_buffer,
-                caption=caption
-            )
-            
-            logger.info(f"✅ Professional stock content sent for {symbol}")
+            if chart_buffer:
+                await self.application.bot.send_photo(
+                    chat_id=CHANNEL_ID,
+                    photo=chart_buffer,
+                    caption=caption
+                )
+                logger.info(f"✅ Professional stock content with chart sent for {symbol}")
+            else:
+                await self.application.bot.send_message(
+                    chat_id=CHANNEL_ID,
+                    text=caption
+                )
+                logger.info(f"✅ Professional stock content (text only) sent for {symbol}")
             
         except Exception as e:
             logger.error(f"❌ Error sending professional stock content: {e}")
@@ -705,6 +639,8 @@ john.doe@gmail.com מאשר"""
     async def send_guaranteed_crypto_content(self):
         """שליחת תוכן קריפטו מקצועי עם המלצות בלעדיות"""
         try:
+            logger.info("🪙 Preparing crypto content...")
+            
             # קריפטו עם פוטנציאל רווח גבוה
             premium_crypto = [
                 {'symbol': 'BTC-USD', 'name': 'Bitcoin', 'type': '👑 מלך הקריפטו'},
@@ -726,6 +662,8 @@ john.doe@gmail.com מאשר"""
             data = crypto.history(period="30d")
             
             if data.empty:
+                logger.warning(f"No data for {symbol}, sending text message instead")
+                await self.send_text_analysis(symbol, '🪙 קריפטו')
                 return
             
             current_price = data['Close'][-1]
@@ -750,10 +688,6 @@ john.doe@gmail.com מאשר"""
             
             # יצירת גרף מקצועי
             chart_buffer = self.create_professional_chart(symbol, data, entry_price, stop_loss, profit_target_1, profit_target_2)
-            
-            if not chart_buffer:
-                await self.send_text_analysis(symbol, '🪙 קריפטו')
-                return
             
             caption = f"""🔥 {crypto_type} {crypto_name} - אות קנייה בלעדי
 
@@ -789,13 +723,19 @@ john.doe@gmail.com מאשר"""
 
 #PeakTradeVIP #{crypto_name} #CryptoSignal #ExclusiveAlert"""
             
-            await self.application.bot.send_photo(
-                chat_id=CHANNEL_ID,
-                photo=chart_buffer,
-                caption=caption
-            )
-            
-            logger.info(f"✅ Professional crypto content sent for {symbol}")
+            if chart_buffer:
+                await self.application.bot.send_photo(
+                    chat_id=CHANNEL_ID,
+                    photo=chart_buffer,
+                    caption=caption
+                )
+                logger.info(f"✅ Professional crypto content with chart sent for {symbol}")
+            else:
+                await self.application.bot.send_message(
+                    chat_id=CHANNEL_ID,
+                    text=caption
+                )
+                logger.info(f"✅ Professional crypto content (text only) sent for {symbol}")
             
         except Exception as e:
             logger.error(f"❌ Error sending professional crypto content: {e}")
@@ -803,6 +743,8 @@ john.doe@gmail.com מאשר"""
     async def send_text_analysis(self, symbol, asset_type):
         """שליחת ניתוח טקסט אם הגרף נכשל"""
         try:
+            logger.info(f"📝 Sending text analysis for {symbol}")
+            
             message = f"""{asset_type} 📈 {symbol} - המלצה בלעדית
 
 💰 מחיר נוכחי: מעודכן בזמן אמת
@@ -934,38 +876,42 @@ john.doe@gmail.com מאשר"""
 
     def setup_scheduler(self):
         """הגדרת תזמון משימות - הודעה כל 30 דקות + בדיקה מיידית"""
-        self.scheduler = AsyncIOScheduler(timezone="Asia/Jerusalem")
-        
-        # בדיקת תפוגת ניסיונות
-        self.scheduler.add_job(
-            self.check_trial_expiry,
-            CronTrigger(hour=9, minute=0),
-            id='check_trial_expiry'
-        )
-        
-        # שליחת הודעה כל 30 דקות בין 10:00-22:00
-        for hour in range(10, 23):
-            for minute in [0, 30]:
-                if hour == 22 and minute == 30:  # לא לשלוח ב-22:30
-                    break
-                    
-                self.scheduler.add_job(
-                    self.send_scheduled_content,
-                    CronTrigger(hour=hour, minute=minute),
-                    id=f'content_{hour}_{minute}'
-                )
-        
-        # הודעת בדיקה מיידית (1 דקה אחרי הפעלה)
-        test_time = datetime.now() + timedelta(minutes=1)
-        self.scheduler.add_job(
-            self.send_immediate_test_with_chart,
-            'date',
-            run_date=test_time,
-            id='immediate_test'
-        )
-        
-        self.scheduler.start()
-        logger.info("✅ Scheduler configured: Message every 30 minutes + immediate test in 1 minute")
+        try:
+            self.scheduler = AsyncIOScheduler(timezone="Asia/Jerusalem")
+            
+            # בדיקת תפוגת ניסיונות
+            self.scheduler.add_job(
+                self.check_trial_expiry,
+                CronTrigger(hour=9, minute=0),
+                id='check_trial_expiry'
+            )
+            
+            # שליחת הודעה כל 30 דקות בין 10:00-22:00
+            for hour in range(10, 23):
+                for minute in [0, 30]:
+                    if hour == 22 and minute == 30:  # לא לשלוח ב-22:30
+                        break
+                        
+                    self.scheduler.add_job(
+                        self.send_scheduled_content,
+                        CronTrigger(hour=hour, minute=minute),
+                        id=f'content_{hour}_{minute}'
+                    )
+            
+            # הודעת בדיקה מיידית (30 שניות אחרי הפעלה)
+            test_time = datetime.now() + timedelta(seconds=30)
+            self.scheduler.add_job(
+                self.send_immediate_test_message,
+                'date',
+                run_date=test_time,
+                id='immediate_test'
+            )
+            
+            self.scheduler.start()
+            logger.info("✅ Scheduler configured: Message every 30 minutes + immediate test in 30 seconds")
+            
+        except Exception as e:
+            logger.error(f"❌ Error setting up scheduler: {e}")
 
     async def run(self):
         """הפעלת הבוט"""
@@ -982,7 +928,7 @@ john.doe@gmail.com מאשר"""
             
             logger.info("✅ PeakTrade VIP Bot is running successfully!")
             logger.info("📊 Content: Every 30 minutes between 10:00-22:00")
-            logger.info("🧪 Test message will be sent in 1 minute")
+            logger.info("🧪 Test message will be sent in 30 seconds")
             logger.info(f"💰 Monthly subscription: {MONTHLY_PRICE}₪")
             
             while True:
