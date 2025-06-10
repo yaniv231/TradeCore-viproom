@@ -960,36 +960,60 @@ john.doe@gmail.com מאשר"""
         except Exception as e:
             logger.error(f"❌ Error setting up scheduler: {e}")
 
-    async def run(self):
-        """הפעלת הבוט"""
-        logger.info("🚀 Starting PeakTrade VIP Bot (Background Worker)...")
+   async def run(self):
+    """הפעלת הבוט עם שליחה מאולצת"""
+    logger.info("🚀 Starting PeakTrade VIP Bot (Background Worker)...")
+    
+    self.application = Application.builder().token(BOT_TOKEN).build()
+    self.setup_handlers()
+    self.setup_scheduler()
+    
+    try:
+        await self.application.initialize()
+        await self.application.start()
+        await self.application.updater.start_polling()
         
-        self.application = Application.builder().token(BOT_TOKEN).build()
-        self.setup_handlers()
-        self.setup_scheduler()
+        logger.info("✅ PeakTrade VIP Bot is running successfully!")
+        logger.info("📊 Content: Every 30 minutes between 10:00-22:00")
+        logger.info(f"💰 Monthly subscription: {MONTHLY_PRICE}₪")
         
+        # שליחת הודעת בדיקה מיידית
+        await asyncio.sleep(10)
         try:
-            await self.application.initialize()
-            await self.application.start()
-            await self.application.updater.start_polling()
-            
-            logger.info("✅ PeakTrade VIP Bot is running successfully!")
-            logger.info("📊 Content: Every 30 minutes between 10:00-22:00")
-            logger.info("🧪 Test message with chart will be sent in 30 seconds")
-            logger.info(f"💰 Monthly subscription: {MONTHLY_PRICE}₪")
-            
-            while True:
-                await asyncio.sleep(1)
-                
+            await self.send_immediate_test_message()
+            logger.info("✅ Immediate test sent")
         except Exception as e:
-            logger.error(f"❌ Bot error: {e}")
-        finally:
-            if self.scheduler:
-                self.scheduler.shutdown()
-            if self.application:
-                await self.application.updater.stop()
-                await self.application.stop()
-                await self.application.shutdown()
+            logger.error(f"❌ Test error: {e}")
+        
+        # לולאה עם שליחה מאולצת כל 30 דקות
+        last_send_time = datetime.now()
+        
+        while True:
+            current_time = datetime.now()
+            
+            # בדוק אם עברו 30 דקות מההודעה האחרונה
+            if (current_time - last_send_time).total_seconds() >= 1800:  # 30 דקות
+                # בדוק אם השעה בין 10:00-22:00
+                if 10 <= current_time.hour < 22:
+                    try:
+                        logger.info(f"🕐 Forcing content send at {current_time.strftime('%H:%M')}")
+                        await self.send_scheduled_content()
+                        last_send_time = current_time
+                        logger.info("✅ Forced content sent successfully!")
+                    except Exception as e:
+                        logger.error(f"❌ Error in forced send: {e}")
+            
+            await asyncio.sleep(60)  # בדוק כל דקה
+                
+    except Exception as e:
+        logger.error(f"❌ Bot error: {e}")
+    finally:
+        if self.scheduler:
+            self.scheduler.shutdown()
+        if self.application:
+            await self.application.updater.stop()
+            await self.application.stop()
+            await self.application.shutdown()
 
 if __name__ == "__main__":
     bot = PeakTradeBot()
