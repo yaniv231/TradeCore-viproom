@@ -94,49 +94,64 @@ class PeakTradeBot:
             logger.error(f"❌ Error checking user existence: {e}")
             return False
 
-    def create_advanced_chart_with_stoploss(self, symbol):
-        """יצירת גרף נרות מתקדם עם סטופלוס מומלץ"""
+    def create_professional_chart(self, symbol, data, entry_price, stop_loss, target1, target2):
+        """יצירת גרף מקצועי עם נקודות כניסה ויציאה מסומנות"""
         try:
-            stock = yf.Ticker(symbol)
-            data = stock.history(period="30d")
-            
-            if data.empty:
-                return None, None
-            
-            last_close = data['Close'][-1]
-            stoploss = last_close * 0.98
-            
             plt.style.use('dark_background')
-            fig, ax = plt.subplots(figsize=(12, 8))
+            fig, ax = plt.subplots(figsize=(14, 10))
             
-            # גרף קו במקום נרות (פשוט יותר)
-            ax.plot(data.index, data['Close'], color='white', linewidth=2, label=f'{symbol} Price')
+            # גרף נרות פשוט
+            ax.plot(data.index, data['Close'], color='white', linewidth=3, label=f'{symbol} Price', alpha=0.9)
+            ax.fill_between(data.index, data['Low'], data['High'], alpha=0.2, color='gray', label='Daily Range')
             
-            ax.axhline(stoploss, color='red', linestyle='--', linewidth=2, 
-                      label=f'Stop Loss: {stoploss:.2f} (-2%)', alpha=0.8)
-            ax.axhline(last_close, color='yellow', linestyle='-', linewidth=1.5, 
-                      label=f'Current: {last_close:.2f}', alpha=0.8)
+            # קווי המלצות בצבעים בולטים
+            ax.axhline(entry_price, color='lime', linestyle='-', linewidth=3, 
+                      label=f'🟢 ENTRY: ${entry_price:.2f}', alpha=0.9)
+            ax.axhline(stop_loss, color='red', linestyle='--', linewidth=3, 
+                      label=f'🔴 STOP LOSS: ${stop_loss:.2f}', alpha=0.9)
+            ax.axhline(target1, color='gold', linestyle=':', linewidth=3, 
+                      label=f'🎯 TARGET 1: ${target1:.2f}', alpha=0.9)
+            ax.axhline(target2, color='cyan', linestyle=':', linewidth=3, 
+                      label=f'🚀 TARGET 2: ${target2:.2f}', alpha=0.9)
             
-            profit_target = last_close * 1.05
-            ax.axhline(profit_target, color='green', linestyle=':', linewidth=1.5, 
-                      label=f'Target: {profit_target:.2f} (+5%)', alpha=0.8)
+            # אזורי רווח והפסד
+            ax.fill_between(data.index, entry_price, target2, alpha=0.1, color='green', label='Profit Zone')
+            ax.fill_between(data.index, stop_loss, entry_price, alpha=0.1, color='red', label='Risk Zone')
             
-            ax.set_title(f'{symbol} - 30 Days Chart', color='white', fontsize=16)
-            ax.set_ylabel('Price', color='white')
-            ax.legend(loc='upper left')
-            ax.grid(True, alpha=0.3)
+            # עיצוב מקצועי
+            ax.set_title(f'{symbol} - PeakTrade VIP Analysis', color='white', fontsize=18, fontweight='bold')
+            ax.set_ylabel('Price ($)', color='white', fontsize=14)
+            ax.set_xlabel('Date', color='white', fontsize=14)
             
+            # רשת ולגנדה
+            ax.grid(True, alpha=0.3, color='gray')
+            ax.legend(loc='upper left', fontsize=12, framealpha=0.8)
+            
+            # צבעי רקע מקצועיים
+            ax.set_facecolor('#0a0a0a')
+            fig.patch.set_facecolor('#1a1a1a')
+            
+            # הוספת טקסט מקצועי
+            ax.text(0.02, 0.98, 'PeakTrade VIP', transform=ax.transAxes, 
+                    fontsize=16, color='cyan', fontweight='bold', 
+                    verticalalignment='top', alpha=0.8)
+            
+            ax.text(0.02, 0.02, 'Exclusive Signal', transform=ax.transAxes, 
+                    fontsize=12, color='lime', fontweight='bold', 
+                    verticalalignment='bottom', alpha=0.8)
+            
+            # שמירה
             buffer = io.BytesIO()
             plt.savefig(buffer, format='png', dpi=300, bbox_inches='tight', 
-                       facecolor='black', edgecolor='none')
+                       facecolor='#1a1a1a', edgecolor='none')
             buffer.seek(0)
             plt.close()
             
-            return buffer, stoploss
+            return buffer
             
         except Exception as e:
-            logger.error(f"❌ Error creating chart for {symbol}: {e}")
-            return None, None
+            logger.error(f"❌ Error creating professional chart: {e}")
+            return None
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """פקודת התחלה עם disclaimer"""
@@ -522,71 +537,95 @@ john.doe@gmail.com מאשר"""
             logger.error(f"❌ Error sending scheduled content: {e}")
 
     async def send_guaranteed_stock_content(self):
-        """שליחת תוכן מניה - ללא תלות בשינויים"""
+        """שליחת תוכן מניה מקצועי עם המלצות בלעדיות"""
         try:
-            # מניות פופולריות שתמיד יש להן נתונים
-            popular_stocks = [
-                {'symbol': 'AAPL', 'type': '🇺🇸 אמריקאית'},
-                {'symbol': 'MSFT', 'type': '🇺🇸 אמריקאית'},
-                {'symbol': 'GOOGL', 'type': '🇺🇸 אמריקאית'},
-                {'symbol': 'TSLA', 'type': '🇺🇸 אמריקאית'},
-                {'symbol': 'NVDA', 'type': '🇺🇸 אמריקאית'},
-                {'symbol': 'CHKP', 'type': '🇮🇱 ישראלית (נאסד"ק)'},
-                {'symbol': 'NICE', 'type': '🇮🇱 ישראלית (נאסד"ק)'},
-                {'symbol': 'WIX', 'type': '🇮🇱 ישראלית (נאסד"ק)'}
+            # מניות פופולריות עם פוטנציאל רווח
+            premium_stocks = [
+                {'symbol': 'AAPL', 'type': '🇺🇸 אמריקאית', 'sector': 'טכנולוגיה'},
+                {'symbol': 'MSFT', 'type': '🇺🇸 אמריקאית', 'sector': 'טכנולוגיה'},
+                {'symbol': 'GOOGL', 'type': '🇺🇸 אמריקאית', 'sector': 'טכנולוגיה'},
+                {'symbol': 'TSLA', 'type': '🇺🇸 אמריקאית', 'sector': 'רכב חשמלי'},
+                {'symbol': 'NVDA', 'type': '🇺🇸 אמריקאית', 'sector': 'AI/שבבים'},
+                {'symbol': 'CHKP', 'type': '🇮🇱 ישראלית (נאסד"ק)', 'sector': 'סייבר'},
+                {'symbol': 'NICE', 'type': '🇮🇱 ישראלית (נאסד"ק)', 'sector': 'תוכנה'},
+                {'symbol': 'WIX', 'type': '🇮🇱 ישראלית (נאסד"ק)', 'sector': 'אינטרנט'}
             ]
             
-            selected = random.choice(popular_stocks)
+            selected = random.choice(premium_stocks)
             symbol = selected['symbol']
             stock_type = selected['type']
+            sector = selected['sector']
             
-            # יצירת גרף
-            chart_buffer, stoploss = self.create_advanced_chart_with_stoploss(symbol)
-            
-            if not chart_buffer:
-                # אם הגרף נכשל, שלח הודעת טקסט
-                await self.send_text_analysis(symbol, stock_type)
-                return
-            
-            # קבלת נתונים
+            # קבלת נתונים מפורטים
             stock = yf.Ticker(symbol)
-            data = stock.history(period="2d")
+            data = stock.history(period="30d")
+            
+            if data.empty:
+                return
             
             current_price = data['Close'][-1]
             change = data['Close'][-1] - data['Close'][-2] if len(data) > 1 else 0
             change_percent = (change / data['Close'][-2] * 100) if len(data) > 1 and data['Close'][-2] != 0 else 0
             volume = data['Volume'][-1] if len(data) > 0 else 0
             
-            profit_target = current_price * 1.05
-            risk_reward = (profit_target - current_price) / (current_price - stoploss) if stoploss else 2.5
+            # חישובי המלצות מקצועיות
+            high_30d = data['High'].max()
+            low_30d = data['Low'].min()
+            avg_volume = data['Volume'].mean()
+            
+            # נקודות כניסה ויציאה מקצועיות
+            entry_price = current_price * 1.02  # כניסה 2% מעל המחיר הנוכחי
+            stop_loss = current_price * 0.95   # סטופלוס 5% מתחת
+            profit_target_1 = current_price * 1.08  # יעד ראשון 8%
+            profit_target_2 = current_price * 1.15  # יעד שני 15%
+            
+            # חישוב יחס סיכון/תשואה
+            risk = entry_price - stop_loss
+            reward = profit_target_1 - entry_price
+            risk_reward = reward / risk if risk > 0 else 0
+            
+            # יצירת גרף מקצועי עם נקודות כניסה ויציאה
+            chart_buffer = self.create_professional_chart(symbol, data, entry_price, stop_loss, profit_target_1, profit_target_2)
+            
+            if not chart_buffer:
+                await self.send_text_analysis(symbol, stock_type)
+                return
             
             currency = "₪" if symbol.endswith('.TA') else "$"
             
-            caption = f"""{stock_type} 📈 {symbol} - ניתוח טכני מתקדם
+            # תוכן בלעדי ומקצועי
+            caption = f"""🔥 {stock_type} {symbol} - המלצת השקעה בלעדית
 
-💰 מחיר נוכחי: {currency}{current_price:.2f}
-📊 שינוי יומי: {change:+.2f} ({change_percent:+.2f}%)
-📈 נפח מסחר: {volume:,.0f}
+💎 סקטור: {sector} | מחיר נוכחי: {currency}{current_price:.2f}
 
-🎯 המלצות מסחר:
-🔴 Stop Loss: {currency}{stoploss:.2f} (-2.0%)
-🟢 יעד רווח: {currency}{profit_target:.2f} (+5.0%)
+📊 ניתוח טכני מתקדם (30 ימים):
+• טווח: {currency}{low_30d:.2f} - {currency}{high_30d:.2f}
+• נפח ממוצע: {avg_volume:,.0f} | היום: {volume:,.0f}
+• מומנטום: {'חיובי 📈' if change_percent > 0 else 'שלילי 📉'} ({change_percent:+.2f}%)
+
+🎯 אסטרטגיית כניסה LIVE:
+🟢 כניסה: {currency}{entry_price:.2f} (מעל המחיר הנוכחי)
+🔴 סטופלוס: {currency}{stop_loss:.2f} (-5% הגנה)
+🎯 יעד ראשון: {currency}{profit_target_1:.2f} (+8% רווח)
+🚀 יעד שני: {currency}{profit_target_2:.2f} (+15% רווח)
+
 ⚖️ יחס סיכון/תשואה: 1:{risk_reward:.1f}
 
-🔍 נקודות מפתח:
-• מגמה: {'עלייה' if change_percent > 0 else 'ירידה'}
-• נפח: {'גבוה מהממוצע' if volume > 1000000 else 'נמוך מהממוצע'}
-• תנודתיות: {'בינונית' if abs(change_percent) < 3 else 'גבוהה'}
+💡 המלצה בלעדית PeakTrade:
+{"🔥 כניסה מומלצת - מגמה חזקה!" if change_percent > 2 else "⚡ המתן לפריצה מעל נקודת הכניסה" if change_percent > 0 else "⏳ המתן לייצוב לפני כניסה"}
 
-💡 אסטרטגיה מומלצת:
-• כניסה: מעל {currency}{current_price:.2f}
-• סטופלוס: מתחת ל-{currency}{stoploss:.2f}
-• יעד: {currency}{profit_target:.2f}
+📈 אסטרטגיית יציאה:
+• מכור 50% ביעד הראשון
+• מכור 50% ביעד השני
+• הזז סטופלוס לנקודת הכניסה אחרי יעד ראשון
 
-⚠️ זה לא ייעוץ השקעה - לצרכי חינוך בלבד
+💰 פוטנציאל רווח: {currency}{reward:.2f} למניה
+💸 סיכון מקסימלי: {currency}{risk:.2f} למניה
+
+⚠️ זוהי המלצה בלעדית לחברי PeakTrade VIP בלבד
 🚀 עסקה אחת ואתה משלש את ההשקעה!!
 
-#PeakTradeVIP #{symbol} #TechnicalAnalysis"""
+#PeakTradeVIP #{symbol} #ExclusiveSignal #LiveAnalysis"""
             
             await self.application.bot.send_photo(
                 chat_id=CHANNEL_ID,
@@ -594,68 +633,97 @@ john.doe@gmail.com מאשר"""
                 caption=caption
             )
             
-            logger.info(f"✅ Guaranteed stock content sent for {symbol}")
+            logger.info(f"✅ Professional stock content sent for {symbol}")
             
         except Exception as e:
-            logger.error(f"❌ Error sending guaranteed stock content: {e}")
+            logger.error(f"❌ Error sending professional stock content: {e}")
 
     async def send_guaranteed_crypto_content(self):
-        """שליחת תוכן קריפטו - ללא תלות בשינויים"""
+        """שליחת תוכן קריפטו מקצועי עם המלצות בלעדיות"""
         try:
-            # קריפטו פופולרי
-            popular_crypto = [
-                'BTC-USD', 'ETH-USD', 'SOL-USD', 'XRP-USD', 
-                'BNB-USD', 'ADA-USD', 'DOGE-USD', 'AVAX-USD'
+            # קריפטו עם פוטנציאל רווח גבוה
+            premium_crypto = [
+                {'symbol': 'BTC-USD', 'name': 'Bitcoin', 'type': '👑 מלך הקריפטו'},
+                {'symbol': 'ETH-USD', 'name': 'Ethereum', 'type': '⚡ פלטפורמת חכמה'},
+                {'symbol': 'SOL-USD', 'name': 'Solana', 'type': '🚀 בלוקצ\'יין מהיר'},
+                {'symbol': 'XRP-USD', 'name': 'Ripple', 'type': '🏦 תשלומים בנקאיים'},
+                {'symbol': 'BNB-USD', 'name': 'Binance', 'type': '🔥 טוקן בורסה'},
+                {'symbol': 'ADA-USD', 'name': 'Cardano', 'type': '🌱 ירוק ומתקדם'},
+                {'symbol': 'AVAX-USD', 'name': 'Avalanche', 'type': '❄️ מהיר וזול'}
             ]
             
-            symbol = random.choice(popular_crypto)
-            crypto_name = symbol.replace('-USD', '')
+            selected = random.choice(premium_crypto)
+            symbol = selected['symbol']
+            crypto_name = selected['name']
+            crypto_type = selected['type']
             
-            # יצירת גרף
-            chart_buffer, stoploss = self.create_advanced_chart_with_stoploss(symbol)
+            # קבלת נתונים מפורטים
+            crypto = yf.Ticker(symbol)
+            data = crypto.history(period="30d")
+            
+            if data.empty:
+                return
+            
+            current_price = data['Close'][-1]
+            change = data['Close'][-1] - data['Close'][-2] if len(data) > 1 else 0
+            change_percent = (change / data['Close'][-2] * 100) if len(data) > 1 and data['Close'][-2] != 0 else 0
+            volume = data['Volume'][-1] if len(data) > 0 else 0
+            
+            # חישובי המלצות מקצועיות לקריפטו
+            high_30d = data['High'].max()
+            low_30d = data['Low'].min()
+            
+            # נקודות כניסה ויציאה אגרסיביות לקריפטו
+            entry_price = current_price * 1.03  # כניסה 3% מעל
+            stop_loss = current_price * 0.92   # סטופלוס 8% מתחת
+            profit_target_1 = current_price * 1.12  # יעד ראשון 12%
+            profit_target_2 = current_price * 1.25  # יעד שני 25%
+            
+            # חישוב יחס סיכון/תשואה
+            risk = entry_price - stop_loss
+            reward = profit_target_1 - entry_price
+            risk_reward = reward / risk if risk > 0 else 0
+            
+            # יצירת גרף מקצועי
+            chart_buffer = self.create_professional_chart(symbol, data, entry_price, stop_loss, profit_target_1, profit_target_2)
             
             if not chart_buffer:
                 await self.send_text_analysis(symbol, '🪙 קריפטו')
                 return
             
-            # קבלת נתונים
-            crypto = yf.Ticker(symbol)
-            data = crypto.history(period="2d")
-            
-            current_price = data['Close'][-1]
-            change = data['Close'][-1] - data['Close'][-2] if len(data) > 1 else 0
-            change_percent = (change / data['Close'][-2] * 100) if len(data) > 1 and data['Close'][-2] != 0 else 0
-            volume = data['Volume'][-1] if len(data) > 0 else 0
-            
-            profit_target = current_price * 1.05
-            risk_reward = (profit_target - current_price) / (current_price - stoploss) if stoploss else 2.5
-            
-            caption = f"""🪙 קריפטו {crypto_name} - ניתוח טכני מתקדם
+            caption = f"""🔥 {crypto_type} {crypto_name} - אות קנייה בלעדי
 
-💰 מחיר נוכחי: ${current_price:.2f}
-📊 שינוי יומי: {change:+.2f} ({change_percent:+.2f}%)
-📈 נפח מסחר: {volume:,.0f}
+💎 מטבע: ${symbol.replace('-USD', '')} | מחיר: ${current_price:.4f}
 
-🎯 המלצות מסחר:
-🔴 Stop Loss: ${stoploss:.2f} (-2.0%)
-🟢 יעד רווח: ${profit_target:.2f} (+5.0%)
+📊 ניתוח קריפטו מתקדם (30 ימים):
+• טווח: ${low_30d:.4f} - ${high_30d:.4f}
+• נפח 24H: {volume:,.0f}
+• מומנטום: {'🚀 חזק' if change_percent > 3 else '📈 חיובי' if change_percent > 0 else '📉 שלילי'} ({change_percent:+.2f}%)
+
+🎯 אסטרטגיית קריפטו LIVE:
+🟢 כניסה: ${entry_price:.4f} (פריצה מעל)
+🔴 סטופלוס: ${stop_loss:.4f} (-8% הגנה)
+🎯 יעד ראשון: ${profit_target_1:.4f} (+12% רווח)
+🚀 יעד שני: ${profit_target_2:.4f} (+25% רווח)
+
 ⚖️ יחס סיכון/תשואה: 1:{risk_reward:.1f}
 
-🔍 נקודות מפתח:
-• מגמה: {'עלייה' if change_percent > 0 else 'ירידה'}
-• נפח: {'גבוה מהממוצע' if volume > 100000 else 'נמוך מהממוצע'}
-• תנודתיות: {'גבוהה' if abs(change_percent) > 5 else 'בינונית'}
+💡 אות בלעדי PeakTrade:
+{"🔥 כניסה חזקה - מומנטום חיובי!" if change_percent > 5 else "⚡ המתן לפריצה מעל התנגדות" if change_percent > 0 else "⏳ זהירות - המתן לאישור מגמה"}
 
-💡 אסטרטגיה מומלצת:
-• כניסה: מעל ${current_price:.2f}
-• סטופלוס: מתחת ל-${stoploss:.2f}
-• יעד: ${profit_target:.2f}
+📈 אסטרטגיית יציאה מתקדמת:
+• מכור 40% ביעד הראשון (רווח מובטח)
+• מכור 60% ביעד השני (רווח מקסימלי)
+• הזז סטופלוס לנקודת הכניסה אחרי יעד ראשון
 
-⚠️ זה לא ייעוץ השקעה - לצרכי חינוך בלבד
-⚠️ קריפטו כרוך בסיכון גבוה במיוחד
+💰 פוטנציאל רווח: ${reward:.4f} ליחידה
+💸 סיכון מקסימלי: ${risk:.4f} ליחידה
+
+⚠️ קריפטו - סיכון גבוה, פוטנציאל רווח גבוה
+🔥 המלצה בלעדית לחברי VIP בלבד
 🚀 עסקה אחת ואתה משלש את ההשקעה!!
 
-#PeakTradeVIP #{crypto_name} #Crypto #TechnicalAnalysis"""
+#PeakTradeVIP #{crypto_name} #CryptoSignal #ExclusiveAlert"""
             
             await self.application.bot.send_photo(
                 chat_id=CHANNEL_ID,
@@ -663,32 +731,34 @@ john.doe@gmail.com מאשר"""
                 caption=caption
             )
             
-            logger.info(f"✅ Guaranteed crypto content sent for {symbol}")
+            logger.info(f"✅ Professional crypto content sent for {symbol}")
             
         except Exception as e:
-            logger.error(f"❌ Error sending guaranteed crypto content: {e}")
+            logger.error(f"❌ Error sending professional crypto content: {e}")
 
     async def send_text_analysis(self, symbol, asset_type):
         """שליחת ניתוח טקסט אם הגרף נכשל"""
         try:
-            message = f"""{asset_type} 📈 {symbol} - ניתוח מהיר
+            message = f"""{asset_type} 📈 {symbol} - המלצה בלעדית
 
 💰 מחיר נוכחי: מעודכן בזמן אמת
-📊 ניתוח טכני זמין באפליקציה
+📊 ניתוח טכני מתקדם
 
-🎯 המלצות מסחר:
-🔴 Stop Loss: -2% מהמחיר הנוכחי
-🟢 יעד רווח: +5% מהמחיר הנוכחי
+🎯 המלצות מסחר בלעדיות:
+🟢 כניסה: +2% מהמחיר הנוכחי
+🔴 סטופלוס: -5% מהמחיר הנוכחי
+🎯 יעד ראשון: +8% רווח
+🚀 יעד שני: +15% רווח
 
-💡 אסטרטגיה מומלצת:
-• עקוב אחר המגמה
-• השתמש בסטופלוס
-• נהל סיכונים
+💡 אסטרטגיה מקצועית:
+• המתן לפריצה מעל נקודת הכניסה
+• הגדר סטופלוס מיד אחרי הכניסה
+• מכור חלקית ביעדים
 
-⚠️ זה לא ייעוץ השקעה - לצרכי חינוך בלבד
+⚠️ זוהי המלצה בלעדית לחברי VIP בלבד
 🚀 עסקה אחת ואתה משלש את ההשקעה!!
 
-#PeakTradeVIP #{symbol.replace('-USD', '').replace('.TA', '')}"""
+#PeakTradeVIP #{symbol.replace('-USD', '').replace('.TA', '')} #ExclusiveSignal"""
             
             await self.application.bot.send_message(
                 chat_id=CHANNEL_ID,
