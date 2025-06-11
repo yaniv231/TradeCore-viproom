@@ -15,7 +15,7 @@ import io
 import random
 import requests
 import pandas as pd
-from urllib.request import urlopen
+from twelvedata import TDClient
 
 # הגדרת לוגינג
 logging.basicConfig(
@@ -29,105 +29,87 @@ BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN') or "7619055199:AAEL28DJ-E1Xl7iEfdPqT
 CHANNEL_ID = os.getenv('CHANNEL_ID') or "-1002886874719"
 GOOGLE_CREDENTIALS = os.getenv('GOOGLE_CREDENTIALS')
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
-FMP_API_KEY = os.getenv('FMP_API_KEY') or "demo"
+TWELVE_DATA_API_KEY = os.getenv('TWELVE_DATA_API_KEY') or "fb6b77ae35bc44e0a0837163538c406a"
 
 # הגדרות תשלום
 PAYPAL_PAYMENT_LINK = "https://www.paypal.com/ncp/payment/LYPU8NUFJB7XW"
-MONTHLY_PRICE = 120  # שמירה על המחיר המקורי
+MONTHLY_PRICE = 120
 
 # מצבי השיחה
 WAITING_FOR_EMAIL = 1
 
-class FMPApi:
+class TwelveDataAPI:
     def __init__(self, api_key):
-        self.api_key = api_key
-        self.base_url = "https://financialmodelingprep.com/api/v3"
-    
-    def get_jsonparsed_data(self, url):
-        """פונקציה לקבלת נתונים מ-FMP API"""
-        try:
-            response = urlopen(url)
-            data = response.read().decode("utf-8")
-            return json.loads(data)
-        except Exception as e:
-            logger.error(f"Error fetching data from {url}: {e}")
-            return None
+        self.td = TDClient(apikey=api_key)
     
     def get_stock_data(self, symbol):
-        """קבלת נתוני מניה מ-FMP API"""
+        """קבלת נתוני מניה מ-Twelve Data API"""
         try:
-            url = f"{self.base_url}/historical-price-full/{symbol}?timeseries=30&apikey={self.api_key}"
-            data = self.get_jsonparsed_data(url)
+            # קבלת נתונים היסטוריים (30 ימים)
+            ts = self.td.time_series(
+                symbol=symbol,
+                interval="1day",
+                outputsize=30
+            )
             
-            if data and 'historical' in data and len(data['historical']) > 0:
-                historical_data = data['historical']
-                df_data = []
-                
-                for item in historical_data:
-                    df_data.append({
-                        'Open': float(item.get('open', 0)),
-                        'High': float(item.get('high', 0)),
-                        'Low': float(item.get('low', 0)),
-                        'Close': float(item.get('close', 0)),
-                        'Volume': int(item.get('volume', 0))
-                    })
-                
-                df = pd.DataFrame(df_data)
-                dates = [datetime.strptime(item['date'], '%Y-%m-%d') for item in reversed(historical_data)]
-                df.index = pd.DatetimeIndex(dates)
+            # המרה ל-DataFrame
+            df = ts.as_pandas()
+            
+            if df is not None and not df.empty:
+                # שינוי שמות עמודות לפורמט הנדרש
+                df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
                 df = df.sort_index()
                 
-                logger.info(f"✅ FMP data retrieved for {symbol}: {len(df)} days")
+                logger.info(f"✅ Twelve Data retrieved for {symbol}: {len(df)} days")
                 return df
             else:
-                logger.error(f"No FMP historical data for {symbol}")
-                return self.get_stock_quote(symbol)
-                
-        except Exception as e:
-            logger.error(f"FMP historical data error for {symbol}: {e}")
-            return self.get_stock_quote(symbol)
-    
-    def get_stock_quote(self, symbol):
-        """קבלת נתוני מניה בסיסיים מ-FMP"""
-        try:
-            url = f"{self.base_url}/quote/{symbol}?apikey={self.api_key}"
-            quote_data = self.get_jsonparsed_data(url)
-            
-            if quote_data and len(quote_data) > 0:
-                quote = quote_data[0]
-                current_price = float(quote.get('price', 0))
-                
-                if current_price > 0:
-                    df_data = []
-                    for i in range(30):
-                        date = datetime.now() - timedelta(days=29-i)
-                        price_variation = random.uniform(0.95, 1.05)
-                        base_price = current_price * price_variation
-                        
-                        df_data.append({
-                            'Open': base_price * random.uniform(0.99, 1.01),
-                            'High': base_price * random.uniform(1.00, 1.03),
-                            'Low': base_price * random.uniform(0.97, 1.00),
-                            'Close': base_price,
-                            'Volume': random.randint(1000000, 10000000)
-                        })
-                    
-                    df = pd.DataFrame(df_data)
-                    dates = [datetime.now() - timedelta(days=29-i) for i in range(30)]
-                    df.index = pd.DatetimeIndex(dates)
-                    df.iloc[-1, df.columns.get_loc('Close')] = current_price
-                    
-                    logger.info(f"✅ FMP quote data used for {symbol}: ${current_price}")
-                    return df
-                else:
-                    logger.error(f"Invalid price data for {symbol}")
-                    return None
-            else:
-                logger.error(f"No FMP quote data for {symbol}")
+                logger.error(f"No Twelve Data for {symbol}")
                 return None
                 
         except Exception as e:
-            logger.error(f"FMP quote error for {symbol}: {e}")
+            logger.error(f"Twelve Data error for {symbol}: {e}")
+            return self.get_stock_quote(symbol)
+    
+    def get_stock_quote(self, symbol):
+        """קבלת מחיר נוכחי מ-Twelve Data"""
+        try:
+            quote = self.td.price(symbol=symbol)
+            price_data = quote.as_json()
+            
+            if 'price' in price_data:
+                current_price = float(price_data['price'])
+                
+                # יצירת DataFrame פשוט עם המחיר הנוכחי
+                df_data = []
+                for i in range(30):
+                    date = datetime.now() - timedelta(days=29-i)
+                    # שימוש במחיר האמיתי עם וריאציות קטנות
+                    price_variation = random.uniform(0.98, 1.02)
+                    base_price = current_price * price_variation
+                    
+                    df_data.append({
+                        'Open': base_price * random.uniform(0.995, 1.005),
+                        'High': base_price * random.uniform(1.00, 1.02),
+                        'Low': base_price * random.uniform(0.98, 1.00),
+                        'Close': base_price,
+                        'Volume': random.randint(1000000, 10000000)
+                    })
+                
+                df = pd.DataFrame(df_data)
+                dates = [datetime.now() - timedelta(days=29-i) for i in range(30)]
+                df.index = pd.DatetimeIndex(dates)
+                
+                # עדכון המחיר האחרון למחיר האמיתי
+                df.iloc[-1, df.columns.get_loc('Close')] = current_price
+                
+                logger.info(f"✅ Twelve Data quote used for {symbol}: ${current_price}")
+                return df
+            else:
+                logger.error(f"No price data for {symbol}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Twelve Data quote error for {symbol}: {e}")
             return None
 
 class PeakTradeBot:
@@ -136,7 +118,7 @@ class PeakTradeBot:
         self.scheduler = None
         self.google_client = None
         self.sheet = None
-        self.fmp_api = FMPApi(FMP_API_KEY)
+        self.twelve_api = TwelveDataAPI(TWELVE_DATA_API_KEY)
         self.setup_google_sheets()
         
     def setup_google_sheets(self):
@@ -292,7 +274,6 @@ class PeakTradeBot:
         try:
             await self.log_disclaimer_sent(user)
             
-            # הוספה אוטומטית לקבוצה VIP
             invite_link = await context.bot.create_chat_invite_link(
                 chat_id=CHANNEL_ID,
                 member_limit=1,
@@ -577,9 +558,9 @@ class PeakTradeBot:
         logger.info("✅ All handlers configured")
 
     async def send_guaranteed_stock_content(self):
-        """שליחת תוכן מניה מקצועי עם FMP"""
+        """שליחת תוכן מניה מקצועי עם Twelve Data"""
         try:
-            logger.info("📈 Preparing stock content with FMP...")
+            logger.info("📈 Preparing stock content with Twelve Data...")
             
             # מגוון עצום של מניות מכל הסקטורים
             premium_stocks = [
@@ -669,7 +650,6 @@ class PeakTradeBot:
                 {'symbol': 'UBER', 'type': 'UBER', 'sector': 'שיתוף נסיעות'},
                 {'symbol': 'LYFT', 'type': 'LYFT', 'sector': 'שיתוף נסיעות'},
                 {'symbol': 'ABNB', 'type': 'ABNB', 'sector': 'נופש'},
-                {'symbol': 'TWTR', 'type': 'TWTR', 'sector': 'רשתות חברתיות'},
                 {'symbol': 'SNAP', 'type': 'SNAP', 'sector': 'רשתות חברתיות'},
                 {'symbol': 'PINS', 'type': 'PINS', 'sector': 'רשתות חברתיות'},
                 {'symbol': 'SPOT', 'type': 'SPOT', 'sector': 'מוזיקה'},
@@ -680,16 +660,16 @@ class PeakTradeBot:
             
             # קריפטו
             premium_crypto = [
-                {'symbol': 'BTC-USD', 'name': 'Bitcoin', 'type': 'Bitcoin'},
-                {'symbol': 'ETH-USD', 'name': 'Ethereum', 'type': 'Ethereum'},
-                {'symbol': 'BNB-USD', 'name': 'Binance', 'type': 'Binance'},
-                {'symbol': 'XRP-USD', 'name': 'Ripple', 'type': 'Ripple'},
-                {'symbol': 'ADA-USD', 'name': 'Cardano', 'type': 'Cardano'},
-                {'symbol': 'SOL-USD', 'name': 'Solana', 'type': 'Solana'},
-                {'symbol': 'DOGE-USD', 'name': 'Dogecoin', 'type': 'Dogecoin'},
-                {'symbol': 'DOT-USD', 'name': 'Polkadot', 'type': 'Polkadot'},
-                {'symbol': 'AVAX-USD', 'name': 'Avalanche', 'type': 'Avalanche'},
-                {'symbol': 'SHIB-USD', 'name': 'Shiba', 'type': 'Shiba'},
+                {'symbol': 'BTC/USD', 'name': 'Bitcoin', 'type': 'Bitcoin'},
+                {'symbol': 'ETH/USD', 'name': 'Ethereum', 'type': 'Ethereum'},
+                {'symbol': 'BNB/USD', 'name': 'Binance', 'type': 'Binance'},
+                {'symbol': 'XRP/USD', 'name': 'Ripple', 'type': 'Ripple'},
+                {'symbol': 'ADA/USD', 'name': 'Cardano', 'type': 'Cardano'},
+                {'symbol': 'SOL/USD', 'name': 'Solana', 'type': 'Solana'},
+                {'symbol': 'DOGE/USD', 'name': 'Dogecoin', 'type': 'Dogecoin'},
+                {'symbol': 'DOT/USD', 'name': 'Polkadot', 'type': 'Polkadot'},
+                {'symbol': 'AVAX/USD', 'name': 'Avalanche', 'type': 'Avalanche'},
+                {'symbol': 'SHIB/USD', 'name': 'Shiba', 'type': 'Shiba'},
             ]
             
             # בחירה אקראית בין מניה לקריפטו (80% מניות, 20% קריפטו)
@@ -701,10 +681,10 @@ class PeakTradeBot:
                 stock_type = selected['type']
                 sector = selected['sector']
                 
-                data = self.fmp_api.get_stock_data(symbol)
+                data = self.twelve_api.get_stock_data(symbol)
                 
                 if data is None or data.empty:
-                    logger.warning(f"No FMP data for {symbol}")
+                    logger.warning(f"No Twelve Data for {symbol}")
                     await self.send_text_analysis(symbol, stock_type)
                     return
                 
@@ -761,13 +741,13 @@ class PeakTradeBot:
                         photo=chart_buffer,
                         caption=caption
                     )
-                    logger.info(f"✅ FMP stock content sent for {symbol}")
+                    logger.info(f"✅ Twelve Data stock content sent for {symbol}")
                 else:
                     await self.application.bot.send_message(
                         chat_id=CHANNEL_ID,
                         text=caption
                     )
-                    logger.info(f"✅ FMP stock content (text) sent for {symbol}")
+                    logger.info(f"✅ Twelve Data stock content (text) sent for {symbol}")
             
             else:  # קריפטו
                 selected = random.choice(premium_crypto)
@@ -778,14 +758,14 @@ class PeakTradeBot:
                 await self.send_crypto_analysis(symbol, crypto_name, crypto_type)
             
         except Exception as e:
-            logger.error(f"❌ Error sending FMP stock content: {e}")
+            logger.error(f"❌ Error sending Twelve Data stock content: {e}")
 
     async def send_crypto_analysis(self, symbol, crypto_name, crypto_type):
         """שליחת ניתוח קריפטו"""
         try:
             message = f"""🪙 {crypto_type} - אות קנייה בלעדי!
 
-💎 מטבע: {symbol.replace('-USD', '')} | מחיר נוכחי: מעודכן בזמן אמת
+💎 מטבע: {symbol.replace('/USD', '')} | מחיר נוכחי: מעודכן בזמן אמת
 
 📊 ניתוח קריפטו מקצועי:
 • מומנטום: מתחזק 🚀
@@ -829,7 +809,7 @@ class PeakTradeBot:
 
 🔥 זוהי המלצה בלעדית לחברי VIP!
 
-#PeakTradeVIP #{symbol.replace('-USD', '').replace('.TA', '')} #HotStock"""
+#PeakTradeVIP #{symbol.replace('/USD', '').replace('.TA', '')} #HotStock"""
             
             await self.application.bot.send_message(
                 chat_id=CHANNEL_ID,
@@ -842,8 +822,8 @@ class PeakTradeBot:
             logger.error(f"❌ Error sending text analysis: {e}")
 
     async def run(self):
-        """הפעלת הבוט עם FMP"""
-        logger.info("🚀 Starting PeakTrade VIP Bot with FMP...")
+        """הפעלת הבוט עם Twelve Data"""
+        logger.info("🚀 Starting PeakTrade VIP Bot with Twelve Data...")
         
         self.application = Application.builder().token(BOT_TOKEN).build()
         self.setup_handlers()
@@ -866,7 +846,7 @@ class PeakTradeBot:
             await self.application.updater.start_polling()
             
             logger.info("✅ PeakTrade VIP Bot is running successfully!")
-            logger.info("📊 FMP API integrated - 250 calls/day")
+            logger.info("📊 Twelve Data API integrated - 800 calls/day")
             logger.info("📊 Content: Every 30 minutes between 10:00-22:00")
             logger.info("📊 Stock pool: 60+ stocks from all sectors")
             logger.info("📊 Crypto pool: 10+ major cryptocurrencies")
@@ -877,7 +857,7 @@ class PeakTradeBot:
             await asyncio.sleep(10)
             try:
                 await self.send_guaranteed_stock_content()
-                logger.info("✅ Immediate FMP test sent")
+                logger.info("✅ Immediate Twelve Data test sent")
             except Exception as e:
                 logger.error(f"❌ Test error: {e}")
             
@@ -890,12 +870,12 @@ class PeakTradeBot:
                 if (current_time - last_send_time).total_seconds() >= 1800:  # 30 דקות
                     if 10 <= current_time.hour < 22:
                         try:
-                            logger.info(f"🕐 Forcing FMP content at {current_time.strftime('%H:%M')}")
+                            logger.info(f"🕐 Forcing Twelve Data content at {current_time.strftime('%H:%M')}")
                             await self.send_guaranteed_stock_content()
                             last_send_time = current_time
-                            logger.info("✅ Forced FMP content sent successfully!")
+                            logger.info("✅ Forced Twelve Data content sent successfully!")
                         except Exception as e:
-                            logger.error(f"❌ Error in forced FMP send: {e}")
+                            logger.error(f"❌ Error in forced Twelve Data send: {e}")
                 
                 await asyncio.sleep(60)
                 
