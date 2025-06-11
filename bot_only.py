@@ -32,7 +32,7 @@ SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
 FMP_API_KEY = os.getenv('FMP_API_KEY') or "demo"
 
 # הגדרות תשלום
-PAYPAL_PAYMENT_LINK = "https://paypal.me/yourpaypal/120"
+PAYPAL_PAYMENT_LINK = "https://www.paypal.com/ncp/payment/LYPU8NUFJB7XW"
 MONTHLY_PRICE = 120
 
 # מצבי השיחה
