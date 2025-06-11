@@ -181,7 +181,7 @@ class PeakTradeBot:
             return False
 
     def create_professional_chart_with_prices(self, symbol, data, current_price, entry_price, stop_loss, target1, target2):
-        """יצירת גרף מקצועי עם מחירים ספציפיים מסומנים"""
+        """יצירת גרף מקצועי עם מחירים ספציפיים מסומנים - טקסט באנגלית"""
         try:
             plt.style.use('dark_background')
             fig, ax = plt.subplots(figsize=(14, 10))
@@ -189,23 +189,24 @@ class PeakTradeBot:
             ax.plot(data.index, data['Close'], color='white', linewidth=3, label=f'{symbol} Price', alpha=0.9)
             ax.fill_between(data.index, data['Low'], data['High'], alpha=0.2, color='gray', label='Daily Range')
             
+            # טקסט באנגלית למניעת בעיות RTL
             ax.axhline(current_price, color='yellow', linestyle='-', linewidth=4, 
-                      label=f'💰 מחיר נוכחי: ${current_price:.2f}', alpha=1.0)
+                      label=f'💰 Current Price: ${current_price:.2f}', alpha=1.0)
             ax.axhline(entry_price, color='lime', linestyle='-', linewidth=3, 
-                      label=f'🟢 כניסה: ${entry_price:.2f}', alpha=0.9)
+                      label=f'🟢 Entry: ${entry_price:.2f}', alpha=0.9)
             ax.axhline(stop_loss, color='red', linestyle='--', linewidth=3, 
-                      label=f'🔴 סטופלוס: ${stop_loss:.2f}', alpha=0.9)
+                      label=f'🔴 Stop Loss: ${stop_loss:.2f}', alpha=0.9)
             ax.axhline(target1, color='gold', linestyle=':', linewidth=3, 
-                      label=f'🎯 יעד 1: ${target1:.2f}', alpha=0.9)
+                      label=f'🎯 Target 1: ${target1:.2f}', alpha=0.9)
             ax.axhline(target2, color='cyan', linestyle=':', linewidth=3, 
-                      label=f'🚀 יעד 2: ${target2:.2f}', alpha=0.9)
+                      label=f'🚀 Target 2: ${target2:.2f}', alpha=0.9)
             
-            ax.fill_between(data.index, entry_price, target2, alpha=0.15, color='green', label='אזור רווח')
-            ax.fill_between(data.index, stop_loss, entry_price, alpha=0.15, color='red', label='אזור סיכון')
+            ax.fill_between(data.index, entry_price, target2, alpha=0.15, color='green', label='Profit Zone')
+            ax.fill_between(data.index, stop_loss, entry_price, alpha=0.15, color='red', label='Risk Zone')
             
             ax.set_title(f'{symbol} - PeakTrade VIP Analysis', color='white', fontsize=20, fontweight='bold', pad=20)
-            ax.set_ylabel('מחיר ($)', color='white', fontsize=16, fontweight='bold')
-            ax.set_xlabel('תאריך', color='white', fontsize=16, fontweight='bold')
+            ax.set_ylabel('Price ($)', color='white', fontsize=16, fontweight='bold')
+            ax.set_xlabel('Date', color='white', fontsize=16, fontweight='bold')
             
             ax.grid(True, alpha=0.4, color='gray', linestyle='-', linewidth=0.5)
             ax.legend(loc='upper left', fontsize=13, framealpha=0.9, fancybox=True, shadow=True)
@@ -217,7 +218,7 @@ class PeakTradeBot:
                     fontsize=18, color='cyan', fontweight='bold', 
                     verticalalignment='top', alpha=0.9)
             
-            ax.text(0.02, 0.02, 'Powered by FMP', transform=ax.transAxes, 
+            ax.text(0.02, 0.02, 'Professional Analysis', transform=ax.transAxes, 
                     fontsize=14, color='lime', fontweight='bold', 
                     verticalalignment='bottom', alpha=0.9)
             
@@ -254,9 +255,7 @@ class PeakTradeBot:
 ⏰ תקופת ניסיון: 7 ימים חינם
 💰 מחיר מנוי: 120₪/חודש
 
-✅ להמשך, אנא שלח את המילה: מאשר
-
-המידע המוצג בערוץ הוא לצרכי מידע בלבד • כל השקעה כרוכה בסיכון"""
+✅ להמשך, אנא שלח את המילה: מאשר"""
         
         await update.message.reply_text(disclaimer_message)
         return WAITING_FOR_EMAIL
@@ -375,8 +374,6 @@ class PeakTradeBot:
 ⚠️ מי שלא יחדש – יוסר מהערוץ אוטומטית מחר.
 📸 אחרי התשלום שלח צילום מסך
 
-🚀 עסקה אחת ואתה משלש את ההשקעה!
-
 מה תבחר?"""
             
             await self.application.bot.send_message(
@@ -481,7 +478,6 @@ class PeakTradeBot:
 ⏰ חיוב חודשי אוטומטי
 
 📸 אחרי התשלום שלח צילום מסך
-🚀 עסקה אחת ואתה משלש את ההשקעה!!
 
 🔒 תשלום מאובטח דרך:
 
@@ -635,11 +631,8 @@ class PeakTradeBot:
 💸 סיכון מקסימלי: ${risk:.2f} למניה
 
 🔥 זוהי המלצה בלעדית לחברי PeakTrade VIP!
-🚀 עסקה אחת ואתה משלש את ההשקעה!
 
-#PeakTradeVIP #{symbol} #HotStock
-
-המידע לצרכי מידע בלבד • השקעה כרוכה בסיכון"""
+#PeakTradeVIP #{symbol} #HotStock"""
             
             if chart_buffer:
                 await self.application.bot.send_photo(
@@ -673,11 +666,8 @@ class PeakTradeBot:
 🚀 יעד שני: +15% רווח מקסימלי
 
 🔥 זוהי המלצה בלעדית לחברי VIP!
-🚀 עסקה אחת ואתה משלש את ההשקעה!
 
-#PeakTradeVIP #{symbol.replace('-USD', '').replace('.TA', '')} #HotStock
-
-המידע לצרכי מידע בלבד • השקעה כרוכה בסיכון"""
+#PeakTradeVIP #{symbol.replace('-USD', '').replace('.TA', '')} #HotStock"""
             
             await self.application.bot.send_message(
                 chat_id=CHANNEL_ID,
