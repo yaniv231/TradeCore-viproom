@@ -15,7 +15,6 @@ import io
 import random
 import requests
 import pandas as pd
-from twelvedata import TDClient
 
 # הגדרת לוגינג
 logging.basicConfig(
@@ -40,31 +39,44 @@ WAITING_FOR_EMAIL = 1
 
 class TwelveDataAPI:
     def __init__(self, api_key):
-        self.td = TDClient(apikey=api_key)
+        self.api_key = api_key
+        self.base_url = "https://api.twelvedata.com"
     
     def get_stock_data(self, symbol):
-        """קבלת נתוני מניה מ-Twelve Data API"""
+        """קבלת נתוני מניה מ-Twelve Data API עם requests"""
         try:
-            # קבלת נתונים היסטוריים (30 ימים)
-            ts = self.td.time_series(
-                symbol=symbol,
-                interval="1day",
-                outputsize=30
-            )
+            url = f"{self.base_url}/time_series"
+            params = {
+                'symbol': symbol,
+                'interval': '1day',
+                'outputsize': 30,
+                'apikey': self.api_key
+            }
             
-            # המרה ל-DataFrame
-            df = ts.as_pandas()
+            response = requests.get(url, params=params)
+            data = response.json()
             
-            if df is not None and not df.empty:
-                # שינוי שמות עמודות לפורמט הנדרש
-                df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+            if 'values' in data and data['values']:
+                df_data = []
+                for item in data['values']:
+                    df_data.append({
+                        'Open': float(item['open']),
+                        'High': float(item['high']),
+                        'Low': float(item['low']),
+                        'Close': float(item['close']),
+                        'Volume': int(item['volume'])
+                    })
+                
+                df = pd.DataFrame(df_data)
+                dates = [datetime.strptime(item['datetime'], '%Y-%m-%d') for item in data['values']]
+                df.index = pd.DatetimeIndex(dates)
                 df = df.sort_index()
                 
                 logger.info(f"✅ Twelve Data retrieved for {symbol}: {len(df)} days")
                 return df
             else:
                 logger.error(f"No Twelve Data for {symbol}")
-                return None
+                return self.get_stock_quote(symbol)
                 
         except Exception as e:
             logger.error(f"Twelve Data error for {symbol}: {e}")
@@ -73,8 +85,14 @@ class TwelveDataAPI:
     def get_stock_quote(self, symbol):
         """קבלת מחיר נוכחי מ-Twelve Data"""
         try:
-            quote = self.td.price(symbol=symbol)
-            price_data = quote.as_json()
+            url = f"{self.base_url}/price"
+            params = {
+                'symbol': symbol,
+                'apikey': self.api_key
+            }
+            
+            response = requests.get(url, params=params)
+            price_data = response.json()
             
             if 'price' in price_data:
                 current_price = float(price_data['price'])
@@ -83,7 +101,6 @@ class TwelveDataAPI:
                 df_data = []
                 for i in range(30):
                     date = datetime.now() - timedelta(days=29-i)
-                    # שימוש במחיר האמיתי עם וריאציות קטנות
                     price_variation = random.uniform(0.98, 1.02)
                     base_price = current_price * price_variation
                     
@@ -98,8 +115,6 @@ class TwelveDataAPI:
                 df = pd.DataFrame(df_data)
                 dates = [datetime.now() - timedelta(days=29-i) for i in range(30)]
                 df.index = pd.DatetimeIndex(dates)
-                
-                # עדכון המחיר האחרון למחיר האמיתי
                 df.iloc[-1, df.columns.get_loc('Close')] = current_price
                 
                 logger.info(f"✅ Twelve Data quote used for {symbol}: ${current_price}")
@@ -645,17 +660,6 @@ class PeakTradeBot:
                 {'symbol': 'SHOP', 'type': 'SHOP', 'sector': 'אי-קומרס'},
                 {'symbol': 'SQ', 'type': 'SQ', 'sector': 'פינטק'},
                 {'symbol': 'PYPL', 'type': 'PYPL', 'sector': 'תשלומים'},
-                
-                # מניות נוספות
-                {'symbol': 'UBER', 'type': 'UBER', 'sector': 'שיתוף נסיעות'},
-                {'symbol': 'LYFT', 'type': 'LYFT', 'sector': 'שיתוף נסיעות'},
-                {'symbol': 'ABNB', 'type': 'ABNB', 'sector': 'נופש'},
-                {'symbol': 'SNAP', 'type': 'SNAP', 'sector': 'רשתות חברתיות'},
-                {'symbol': 'PINS', 'type': 'PINS', 'sector': 'רשתות חברתיות'},
-                {'symbol': 'SPOT', 'type': 'SPOT', 'sector': 'מוזיקה'},
-                {'symbol': 'RBLX', 'type': 'RBLX', 'sector': 'גיימינג'},
-                {'symbol': 'UNITY', 'type': 'UNITY', 'sector': 'גיימינג'},
-                {'symbol': 'EA', 'type': 'EA', 'sector': 'גיימינג'},
             ]
             
             # קריפטו
