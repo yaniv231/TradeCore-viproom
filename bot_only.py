@@ -565,13 +565,13 @@ class PeakTradeBot:
             logger.info("📈 Preparing stock content with FMP...")
             
             premium_stocks = [
-                {'symbol': 'AAPL', 'type': '🇺🇸 אמריקאית', 'sector': 'טכנולוגיה'},
-                {'symbol': 'MSFT', 'type': '🇺🇸 אמריקאית', 'sector': 'טכנולוגיה'},
-                {'symbol': 'GOOGL', 'type': '🇺🇸 אמריקאית', 'sector': 'טכנולוגיה'},
-                {'symbol': 'TSLA', 'type': '🇺🇸 אמריקאית', 'sector': 'רכב חשמלי'},
-                {'symbol': 'NVDA', 'type': '🇺🇸 אמריקאית', 'sector': 'AI/שבבים'},
-                {'symbol': 'AMZN', 'type': '🇺🇸 אמריקאית', 'sector': 'מסחר אלקטרוני'},
-                {'symbol': 'META', 'type': '🇺🇸 אמריקאית', 'sector': 'רשתות חברתיות'}
+                {'symbol': 'AAPL', 'type': 'AAPL', 'sector': 'טכנולוגיה'},
+                {'symbol': 'MSFT', 'type': 'MSFT', 'sector': 'טכנולוגיה'},
+                {'symbol': 'GOOGL', 'type': 'GOOGL', 'sector': 'טכנולוגיה'},
+                {'symbol': 'TSLA', 'type':  'TSLA', 'sector': 'רכב חשמלי'},
+                {'symbol': 'NVDA', 'type':'NVDA', 'sector': 'AI/שבבים'},
+                {'symbol': 'AMZN', 'type': 'AMZN', 'sector': 'מסחר אלקטרוני'},
+                {'symbol': 'META', 'type': 'META', 'sector': 'רשתות חברתיות'}
             ]
             
             selected = random.choice(premium_stocks)
