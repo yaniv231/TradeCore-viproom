@@ -730,8 +730,6 @@ class PeakTradeBot:
 🎯 יעד ראשון: ${profit_target_1:.2f}
 🚀 יעד שני: ${profit_target_2:.2f}
 
-⚖️ יחס סיכון לתשואה: 1:{risk_reward:.1f}
-
 💰 פוטנציאל רווח: ${reward:.2f} למניה
 💸 סיכון מקסימלי: ${risk:.2f} למניה
 
