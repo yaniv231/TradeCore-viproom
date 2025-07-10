@@ -4,7 +4,7 @@ import asyncio
 import json
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from telegram.error import TelegramError
 import gspread
 from google.oauth2.service_account import Credentials
@@ -33,9 +33,6 @@ TWELVE_DATA_API_KEY = os.getenv('TWELVE_DATA_API_KEY') or "fb6b77ae35bc44e0a0837
 # הגדרות תשלום
 PAYPAL_PAYMENT_LINK = "https://www.paypal.com/ncp/payment/LYPU8NUFJB7XW"
 MONTHLY_PRICE = 120
-
-# מצבי השיחה
-WAITING_FOR_EMAIL = 1
 
 class TwelveDataAPI:
     def __init__(self, api_key):
@@ -226,69 +223,26 @@ class PeakTradeBot:
             return None
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """פקודת התחלה עם disclaimer"""
+        """פקודת התחלה - לינק מיידי ללא אישור"""
         user = update.effective_user
         logger.info(f"User {user.id} ({user.username}) started PeakTrade bot")
         
-        disclaimer_message = f"""היי, זה מצוות הערוץ ״PeakTrade VIP״ 
-
-המנוי שלך מתחיל היום {datetime.now().strftime('%d.%m')} ויסתיים ב{(datetime.now() + timedelta(days=7)).strftime('%d.%m')}
-
-חשוב להבהיר:
-🚫התוכן כאן אינו מהווה ייעוץ או המלצה פיננסית מכל סוג!
-📌 ההחלטות בסופו של דבר בידיים שלכם – איך לפעול, מתי להיכנס ומתי לצאת מהשוק.
-
-אנא אשר שקראת והבנת את כל הפרטים."""
-        
-        await update.message.reply_text(disclaimer_message)
-        return WAITING_FOR_EMAIL
-
-    async def log_disclaimer_sent(self, user):
-        """רישום שליחת disclaimer ב-Google Sheets"""
-        try:
-            if not self.sheet:
-                return
-                
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            trial_end = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
-            
-            new_row = [
-                user.id,
-                user.username or "N/A",
-                "",
-                current_time,
-                "confirmed",
-                current_time,
-                trial_end,
-                "trial_active",
-                "",
-                "",
-                current_time
-            ]
-            self.sheet.append_row(new_row)
-            logger.info(f"✅ User {user.id} registered for trial")
-            
-        except Exception as e:
-            logger.error(f"❌ Error logging disclaimer: {e}")
-
-    async def handle_email_confirmation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """טיפול באישור - רק המילה מאשר"""
-        user = update.effective_user
-        message_text = update.message.text.strip()
-        
-        if message_text.lower() != "מאשר":
+        # בדיקה אם משתמש כבר קיים
+        if self.check_user_exists(user.id):
             await update.message.reply_text(
-                "❌ אנא שלח את המילה: מאשר"
+                "🔄 נראה שכבר יש לך מנוי פעיל!\n\nאם אתה צריך עזרה, פנה לתמיכה."
             )
-            return WAITING_FOR_EMAIL
+            return
         
         processing_msg = await update.message.reply_text(
             "⏳ מכין עבורך את הקישור לערוץ הפרמיום..."
         )
         
         try:
-            await self.log_disclaimer_sent(user)
+            # רישום המשתמש ב-Google Sheets
+            await self.log_user_registration(user)
             
+            # יצירת לינק הזמנה
             invite_link = await context.bot.create_chat_invite_link(
                 chat_id=CHANNEL_ID,
                 member_limit=1,
@@ -297,6 +251,14 @@ class PeakTradeBot:
             )
             
             success_message = f"""🎉 ברוך הבא ל-PeakTrade VIP!
+
+היי, זה מצוות הערוץ ״PeakTrade VIP״ 
+
+המנוי שלך מתחיל היום {datetime.now().strftime('%d.%m')} ויסתיים ב{(datetime.now() + timedelta(days=7)).strftime('%d.%m')}
+
+חשוב להבהיר:
+🚫התוכן כאן אינו מהווה ייעוץ או המלצה פיננסית מכל סוג!
+📌 ההחלטות בסופו של דבר בידיים שלכם – איך לפעול, מתי להיכנס ומתי לצאת מהשוק.
 
 👤 שם משתמש: @{user.username or 'לא זמין'}
 
@@ -322,15 +284,41 @@ class PeakTradeBot:
                 disable_web_page_preview=True
             )
             
-            logger.info(f"✅ Trial registration successful for user {user.id}")
-            return ConversationHandler.END
+            logger.info(f"✅ Direct registration successful for user {user.id}")
             
         except Exception as e:
-            logger.error(f"❌ Error in trial registration: {e}")
+            logger.error(f"❌ Error in direct registration: {e}")
             await processing_msg.edit_text(
                 "❌ אופס! משהו השתבש ברישום\n\nאנא נסה שוב או פנה לתמיכה."
             )
-            return ConversationHandler.END
+
+    async def log_user_registration(self, user):
+        """רישום משתמש ב-Google Sheets"""
+        try:
+            if not self.sheet:
+                return
+                
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            trial_end = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+            
+            new_row = [
+                user.id,
+                user.username or "N/A",
+                "",
+                current_time,
+                "confirmed",
+                current_time,
+                trial_end,
+                "trial_active",
+                "",
+                "",
+                current_time
+            ]
+            self.sheet.append_row(new_row)
+            logger.info(f"✅ User {user.id} registered for trial")
+            
+        except Exception as e:
+            logger.error(f"❌ Error logging user registration: {e}")
 
     async def send_trial_expiry_reminder(self, user_id):
         """שליחת תזכורת תשלום יום לפני סיום תקופת הניסיון"""
@@ -545,25 +533,12 @@ class PeakTradeBot:
         await update.message.reply_text(
             "❌ התהליך בוטל. שלח /start כדי להתחיל מחדש."
         )
-        return ConversationHandler.END
 
     def setup_handlers(self):
         """הגדרת handlers"""
-        conv_handler = ConversationHandler(
-            entry_points=[CommandHandler('start', self.start_command)],
-            states={
-                WAITING_FOR_EMAIL: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_email_confirmation)
-                ],
-            },
-            fallbacks=[
-                CommandHandler('cancel', self.cancel_command),
-                CommandHandler('start', self.start_command)
-            ],
-        )
-        
-        self.application.add_handler(conv_handler)
+        self.application.add_handler(CommandHandler('start', self.start_command))
         self.application.add_handler(CommandHandler('help', self.help_command))
+        self.application.add_handler(CommandHandler('cancel', self.cancel_command))
         self.application.add_handler(CallbackQueryHandler(self.handle_payment_choice))
         
         logger.info("✅ All handlers configured")
