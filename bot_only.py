@@ -302,9 +302,6 @@ class PeakTradeBot:
 
 👤 שם משתמש: @{user.username or 'לא זמין'}
 
-🔗 הקישור שלך לערוץ הפרמיום:
-{invite_link.invite_link}
-
 ⏰ תקופת הניסיון שלך: 7 ימים מלאים
 📅 מתחיל היום: {datetime.now().strftime("%d/%m/%Y")}
 📅 מסתיים: {(datetime.now() + timedelta(days=7)).strftime("%d/%m/%Y")}
@@ -317,8 +314,8 @@ class PeakTradeBot:
 
 לחץ על הקישור והצטרף עכשיו! 🚀
 
-📊 Google Sheets: {"✅ מעודכן" if sheets_success else "❌ שגיאה"}
-
+🔗 הקישור שלך לערוץ הפרמיום:
+{invite_link.invite_link}
 בהצלחה במסחר! 💪"""
             
             await processing_msg.edit_text(
