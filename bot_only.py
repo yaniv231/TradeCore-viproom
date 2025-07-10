@@ -317,7 +317,7 @@ class PeakTradeBot:
 
 לחץ על הקישור והצטרף עכשיו! 🚀
 
-{"📊 Google Sheets: " + ("✅ מעודכן" if sheets_success else "❌ שגיאה"))}
+📊 Google Sheets: {"✅ מעודכן" if sheets_success else "❌ שגיאה"}
 
 בהצלחה במסחר! 💪"""
             
@@ -606,7 +606,6 @@ class PeakTradeBot:
         try:
             logger.info("📈 Preparing stock content with Twelve Data...")
             
-
             # מגוון עצום של מניות מכל הסקטורים
             premium_stocks = [
                 # טכנולוגיה גדולה
@@ -705,7 +704,7 @@ class PeakTradeBot:
                 {'symbol': 'AVAX/USD', 'name': 'Avalanche', 'type': 'Avalanche'},
                 {'symbol': 'SHIB/USD', 'name': 'Shiba', 'type': 'Shiba'},
             ]
-
+            
             # בחירה אקראית בין מניה לקריפטו (80% מניות, 20% קריפטו)
             content_type = random.choices(['stock', 'crypto'], weights=[80, 20])[0]
             
@@ -857,6 +856,11 @@ class PeakTradeBot:
         """הפעלת הבוט עם Twelve Data"""
         logger.info("🚀 Starting PeakTrade VIP Bot with Twelve Data...")
         
+        # הגדרת Google Sheets לפני יצירת Application
+        sheets_connected = self.setup_google_sheets()
+        if not sheets_connected:
+            logger.error("❌ Failed to connect to Google Sheets - continuing without it")
+        
         self.application = Application.builder().token(BOT_TOKEN).build()
         self.setup_handlers()
         
@@ -870,7 +874,7 @@ class PeakTradeBot:
         )
         
         self.scheduler.start()
-        logger.info("✅ Trial expiry scheduler configured")
+        logger.info("✅ Trial expiry scheduler started - checking daily at 9:00 AM")
         
         try:
             await self.application.initialize()
@@ -884,6 +888,7 @@ class PeakTradeBot:
             logger.info("📊 Crypto pool: 10+ major cryptocurrencies")
             logger.info("⏰ Trial expiry check: Daily at 9:00 AM")
             logger.info(f"💰 Monthly subscription: {MONTHLY_PRICE}₪")
+            logger.info(f"📋 Google Sheets: {'✅ Connected' if sheets_connected else '❌ Not connected'}")
             
             # שליחת הודעת בדיקה מיידית
             await asyncio.sleep(10)
@@ -914,12 +919,14 @@ class PeakTradeBot:
         except Exception as e:
             logger.error(f"❌ Bot error: {e}")
         finally:
-            if self.scheduler:
+            if self.scheduler and self.scheduler.running:
                 self.scheduler.shutdown()
+                logger.info("🔄 Scheduler shutdown")
             if self.application:
                 await self.application.updater.stop()
                 await self.application.stop()
                 await self.application.shutdown()
+                logger.info("🔄 Bot shutdown complete")
 
 if __name__ == "__main__":
     bot = PeakTradeBot()
@@ -929,4 +936,3 @@ if __name__ == "__main__":
         logger.info("Bot stopped by user")
     except Exception as e:
         logger.error(f"Fatal error: {e}")
-
