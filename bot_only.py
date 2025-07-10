@@ -24,11 +24,30 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # הגדרות המערכת
-BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN') or "7619055199:AAEL28DJ-E1Xl7iEfdPqTXJ0in1Lps0VOtM"
-CHANNEL_ID = os.getenv('CHANNEL_ID') or "-1002886874719"
+BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+CHANNEL_ID = os.getenv('CHANNEL_ID')
 GOOGLE_CREDENTIALS = os.getenv('GOOGLE_CREDENTIALS')
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
-TWELVE_DATA_API_KEY = os.getenv('TWELVE_DATA_API_KEY') or "fb6b77ae35bc44e0a0837163538c406a"
+TWELVE_DATA_API_KEY = os.getenv('TWELVE_DATA_API_KEY')
+
+# בדיקת משתני סביבה
+if not BOT_TOKEN:
+    logger.error("❌ TELEGRAM_BOT_TOKEN environment variable not set!")
+    exit(1)
+if not CHANNEL_ID:
+    logger.error("❌ CHANNEL_ID environment variable not set!")
+    exit(1)
+if not GOOGLE_CREDENTIALS:
+    logger.error("❌ GOOGLE_CREDENTIALS environment variable not set!")
+    exit(1)
+if not SPREADSHEET_ID:
+    logger.error("❌ SPREADSHEET_ID environment variable not set!")
+    exit(1)
+if not TWELVE_DATA_API_KEY:
+    logger.error("❌ TWELVE_DATA_API_KEY environment variable not set!")
+    exit(1)
+
+logger.info("✅ All environment variables are set")
 
 # הגדרות תשלום
 PAYPAL_PAYMENT_LINK = "https://www.paypal.com/ncp/payment/LYPU8NUFJB7XW"
@@ -131,39 +150,60 @@ class PeakTradeBot:
         self.google_client = None
         self.sheet = None
         self.twelve_api = TwelveDataAPI(TWELVE_DATA_API_KEY)
-        self.setup_google_sheets()
         
     def setup_google_sheets(self):
         """הגדרת חיבור ל-Google Sheets"""
         try:
-            if GOOGLE_CREDENTIALS:
-                creds_dict = json.loads(GOOGLE_CREDENTIALS)
-                scope = [
-                    'https://spreadsheets.google.com/feeds',
-                    'https://www.googleapis.com/auth/drive'
-                ]
-                creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-                self.google_client = gspread.authorize(creds)
-                self.sheet = self.google_client.open_by_key(SPREADSHEET_ID).sheet1
-                logger.info("✅ Google Sheets connected successfully")
-            else:
-                logger.warning("⚠️ Google Sheets credentials not found")
+            logger.info("🔄 Setting up Google Sheets connection...")
+            
+            # פירוק JSON credentials
+            creds_dict = json.loads(GOOGLE_CREDENTIALS)
+            logger.info(f"📋 Service account email: {creds_dict.get('client_email', 'N/A')}")
+            
+            scope = [
+                'https://spreadsheets.google.com/feeds',
+                'https://www.googleapis.com/auth/drive'
+            ]
+            
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+            self.google_client = gspread.authorize(creds)
+            
+            # פתיחת הגיליון
+            self.sheet = self.google_client.open_by_key(SPREADSHEET_ID).sheet1
+            
+            # בדיקת גישה
+            test_data = self.sheet.get_all_records()
+            logger.info(f"✅ Google Sheets connected successfully! Found {len(test_data)} existing records")
+            
+            return True
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Error parsing GOOGLE_CREDENTIALS JSON: {e}")
+            return False
         except Exception as e:
             logger.error(f"❌ Error setting up Google Sheets: {e}")
+            return False
 
     def check_user_exists(self, user_id):
         """בדיקה אם משתמש כבר קיים ב-Google Sheets"""
         try:
             if not self.sheet:
+                logger.warning("⚠️ No Google Sheets connection")
                 return False
             
+            logger.info(f"🔍 Checking if user {user_id} exists...")
             records = self.sheet.get_all_records()
+            
             for record in records:
                 if str(record.get('telegram_user_id')) == str(user_id):
                     status = record.get('payment_status', '')
+                    logger.info(f"👤 User {user_id} found with status: {status}")
                     if status in ['trial_active', 'paid_subscriber']:
                         return True
+            
+            logger.info(f"✅ User {user_id} not found - new user")
             return False
+            
         except Exception as e:
             logger.error(f"❌ Error checking user existence: {e}")
             return False
@@ -240,7 +280,7 @@ class PeakTradeBot:
         
         try:
             # רישום המשתמש ב-Google Sheets
-            await self.log_user_registration(user)
+            sheets_success = await self.log_user_registration(user)
             
             # יצירת לינק הזמנה
             invite_link = await context.bot.create_chat_invite_link(
@@ -277,6 +317,8 @@ class PeakTradeBot:
 
 לחץ על הקישור והצטרף עכשיו! 🚀
 
+{"📊 Google Sheets: " + ("✅ מעודכן" if sheets_success else "❌ שגיאה"))}
+
 בהצלחה במסחר! 💪"""
             
             await processing_msg.edit_text(
@@ -284,7 +326,7 @@ class PeakTradeBot:
                 disable_web_page_preview=True
             )
             
-            logger.info(f"✅ Direct registration successful for user {user.id}")
+            logger.info(f"✅ Direct registration successful for user {user.id} (Sheets: {sheets_success})")
             
         except Exception as e:
             logger.error(f"❌ Error in direct registration: {e}")
@@ -296,29 +338,35 @@ class PeakTradeBot:
         """רישום משתמש ב-Google Sheets"""
         try:
             if not self.sheet:
-                return
+                logger.error("❌ No Google Sheets connection for logging")
+                return False
                 
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             trial_end = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
             
+            logger.info(f"📝 Writing user {user.id} to Google Sheets...")
+            
             new_row = [
                 user.id,
                 user.username or "N/A",
-                "",
-                current_time,
-                "confirmed",
-                current_time,
-                trial_end,
-                "trial_active",
-                "",
-                "",
-                current_time
+                "",  # email
+                current_time,  # registration_date
+                "confirmed",  # disclaimer_status
+                current_time,  # trial_start_date
+                trial_end,  # trial_end_date
+                "trial_active",  # payment_status
+                "",  # payment_screenshot
+                "",  # notes
+                current_time  # last_updated
             ]
+            
             self.sheet.append_row(new_row)
-            logger.info(f"✅ User {user.id} registered for trial")
+            logger.info(f"✅ User {user.id} successfully written to Google Sheets")
+            return True
             
         except Exception as e:
             logger.error(f"❌ Error logging user registration: {e}")
+            return False
 
     async def send_trial_expiry_reminder(self, user_id):
         """שליחת תזכורת תשלום יום לפני סיום תקופת הניסיון"""
@@ -410,6 +458,7 @@ class PeakTradeBot:
                 try:
                     self.sheet.update_cell(row_index, 8, "expired_no_payment")
                     self.sheet.update_cell(row_index, 11, current_time)
+                    logger.info(f"📝 Updated Google Sheets for user {user_id} removal")
                 except Exception as update_error:
                     logger.error(f"Error updating expiry status: {update_error}")
             
@@ -421,22 +470,31 @@ class PeakTradeBot:
     async def check_trial_expiry(self):
         """בדיקה יומית של סיום תקופת ניסיון"""
         try:
+            logger.info("🔍 Starting trial expiry check...")
+            
             if not self.sheet:
+                logger.error("❌ No Google Sheets connection for trial check")
                 return
             
             records = self.sheet.get_all_records()
             current_time = datetime.now()
             
+            logger.info(f"📊 Checking {len(records)} records for trial expiry")
+            
             for i, record in enumerate(records):
                 if record.get('payment_status') == 'trial_active':
                     trial_end_str = record.get('trial_end_date')
-                    if trial_end_str:
+                    user_id = record.get('telegram_user_id')
+                    
+                    if trial_end_str and user_id:
                         try:
                             trial_end = datetime.strptime(trial_end_str, "%Y-%m-%d %H:%M:%S")
-                            user_id = record.get('telegram_user_id')
+                            days_diff = (trial_end - current_time).days
+                            
+                            logger.info(f"👤 User {user_id}: trial ends in {days_diff} days")
                             
                             # יום לפני סיום הניסיון - הודעה ראשונה
-                            if (trial_end - current_time).days == 1:
+                            if days_diff == 1:
                                 await self.send_trial_expiry_reminder(user_id)
                             # יום אחרי סיום הניסיון - הודעה שנייה
                             elif current_time > trial_end and (current_time - trial_end).days == 1:
@@ -445,8 +503,8 @@ class PeakTradeBot:
                             elif current_time > trial_end and (current_time - trial_end).days >= 2:
                                 await self.remove_user_after_trial(user_id, i + 2)
                                 
-                        except ValueError:
-                            logger.error(f"Invalid date format: {trial_end_str}")
+                        except ValueError as ve:
+                            logger.error(f"Invalid date format for user {user_id}: {trial_end_str} - {ve}")
             
             logger.info("✅ Trial expiry check completed")
             
@@ -554,319 +612,3 @@ class PeakTradeBot:
                 {'symbol': 'AAPL', 'type': 'AAPL', 'sector': 'טכנולוגיה'},
                 {'symbol': 'MSFT', 'type': 'MSFT', 'sector': 'טכנולוגיה'},
                 {'symbol': 'GOOGL', 'type': 'GOOGL', 'sector': 'טכנולוגיה'},
-                {'symbol': 'AMZN', 'type': 'AMZN', 'sector': 'מסחר אלקטרוני'},
-                {'symbol': 'META', 'type': 'META', 'sector': 'רשתות חברתיות'},
-                
-                # AI ושבבים
-                {'symbol': 'NVDA', 'type': 'NVDA', 'sector': 'AI/שבבים'},
-                {'symbol': 'AMD', 'type': 'AMD', 'sector': 'שבבים'},
-                {'symbol': 'INTC', 'type': 'INTC', 'sector': 'שבבים'},
-                {'symbol': 'TSM', 'type': 'TSM', 'sector': 'שבבים'},
-                {'symbol': 'AVGO', 'type': 'AVGO', 'sector': 'שבבים'},
-                
-                # רכב חשמלי ואנרגיה
-                {'symbol': 'TSLA', 'type': 'TSLA', 'sector': 'רכב חשמלי'},
-                {'symbol': 'RIVN', 'type': 'RIVN', 'sector': 'רכב חשמלי'},
-                {'symbol': 'LCID', 'type': 'LCID', 'sector': 'רכב חשמלי'},
-                {'symbol': 'F', 'type': 'F', 'sector': 'רכב'},
-                {'symbol': 'GM', 'type': 'GM', 'sector': 'רכב'},
-                
-                # בנקים ופיננסים
-                {'symbol': 'JPM', 'type': 'JPM', 'sector': 'בנקאות'},
-                {'symbol': 'BAC', 'type': 'BAC', 'sector': 'בנקאות'},
-                {'symbol': 'WFC', 'type': 'WFC', 'sector': 'בנקאות'},
-                {'symbol': 'GS', 'type': 'GS', 'sector': 'השקעות'},
-                {'symbol': 'MS', 'type': 'MS', 'sector': 'השקעות'},
-                
-                # בריאות ותרופות
-                {'symbol': 'JNJ', 'type': 'JNJ', 'sector': 'תרופות'},
-                {'symbol': 'PFE', 'type': 'PFE', 'sector': 'תרופות'},
-                {'symbol': 'MRNA', 'type': 'MRNA', 'sector': 'ביוטכנולוגיה'},
-                {'symbol': 'ABBV', 'type': 'ABBV', 'sector': 'תרופות'},
-                {'symbol': 'UNH', 'type': 'UNH', 'sector': 'ביטוח בריאות'},
-                
-                # תקשורת ומדיה
-                {'symbol': 'NFLX', 'type': 'NFLX', 'sector': 'סטרימינג'},
-                {'symbol': 'DIS', 'type': 'DIS', 'sector': 'בידור'},
-                {'symbol': 'CMCSA', 'type': 'CMCSA', 'sector': 'תקשורת'},
-                {'symbol': 'T', 'type': 'T', 'sector': 'טלקום'},
-                {'symbol': 'VZ', 'type': 'VZ', 'sector': 'טלקום'},
-                
-                # קמעונאות וצריכה
-                {'symbol': 'WMT', 'type': 'WMT', 'sector': 'קמעונאות'},
-                {'symbol': 'TGT', 'type': 'TGT', 'sector': 'קמעונאות'},
-                {'symbol': 'HD', 'type': 'HD', 'sector': 'שיפוצים'},
-                {'symbol': 'LOW', 'type': 'LOW', 'sector': 'שיפוצים'},
-                {'symbol': 'COST', 'type': 'COST', 'sector': 'קמעונאות'},
-                
-                # אנרגיה ונפט
-                {'symbol': 'XOM', 'type': 'XOM', 'sector': 'נפט'},
-                {'symbol': 'CVX', 'type': 'CVX', 'sector': 'נפט'},
-                {'symbol': 'COP', 'type': 'COP', 'sector': 'נפט'},
-                {'symbol': 'SLB', 'type': 'SLB', 'sector': 'שירותי נפט'},
-                
-                # תעופה ותיירות
-                {'symbol': 'BA', 'type': 'BA', 'sector': 'תעופה'},
-                {'symbol': 'AAL', 'type': 'AAL', 'sector': 'חברות תעופה'},
-                {'symbol': 'DAL', 'type': 'DAL', 'sector': 'חברות תעופה'},
-                {'symbol': 'UAL', 'type': 'UAL', 'sector': 'חברות תעופה'},
-                
-                # מזון ומשקאות
-                {'symbol': 'KO', 'type': 'KO', 'sector': 'משקאות'},
-                {'symbol': 'PEP', 'type': 'PEP', 'sector': 'משקאות'},
-                {'symbol': 'MCD', 'type': 'MCD', 'sector': 'מזון מהיר'},
-                {'symbol': 'SBUX', 'type': 'SBUX', 'sector': 'קפה'},
-                
-                # נדל"ן ובנייה
-                {'symbol': 'AMT', 'type': 'AMT', 'sector': 'REIT'},
-                {'symbol': 'PLD', 'type': 'PLD', 'sector': 'נדלן תעשייתי'},
-                {'symbol': 'CCI', 'type': 'CCI', 'sector': 'תשתיות'},
-                
-                # מניות מתפרצות וגדילה
-                {'symbol': 'ROKU', 'type': 'ROKU', 'sector': 'סטרימינג'},
-                {'symbol': 'PLTR', 'type': 'PLTR', 'sector': 'ביג דאטה'},
-                {'symbol': 'SNOW', 'type': 'SNOW', 'sector': 'ענן'},
-                {'symbol': 'CRWD', 'type': 'CRWD', 'sector': 'סייבר'},
-                {'symbol': 'ZM', 'type': 'ZM', 'sector': 'וידאו'},
-                {'symbol': 'SHOP', 'type': 'SHOP', 'sector': 'אי-קומרס'},
-                {'symbol': 'SQ', 'type': 'SQ', 'sector': 'פינטק'},
-                {'symbol': 'PYPL', 'type': 'PYPL', 'sector': 'תשלומים'},
-            ]
-            
-            # קריפטו
-            premium_crypto = [
-                {'symbol': 'BTC/USD', 'name': 'Bitcoin', 'type': 'Bitcoin'},
-                {'symbol': 'ETH/USD', 'name': 'Ethereum', 'type': 'Ethereum'},
-                {'symbol': 'BNB/USD', 'name': 'Binance', 'type': 'Binance'},
-                {'symbol': 'XRP/USD', 'name': 'Ripple', 'type': 'Ripple'},
-                {'symbol': 'ADA/USD', 'name': 'Cardano', 'type': 'Cardano'},
-                {'symbol': 'SOL/USD', 'name': 'Solana', 'type': 'Solana'},
-                {'symbol': 'DOGE/USD', 'name': 'Dogecoin', 'type': 'Dogecoin'},
-                {'symbol': 'DOT/USD', 'name': 'Polkadot', 'type': 'Polkadot'},
-                {'symbol': 'AVAX/USD', 'name': 'Avalanche', 'type': 'Avalanche'},
-                {'symbol': 'SHIB/USD', 'name': 'Shiba', 'type': 'Shiba'},
-            ]
-            
-            # בחירה אקראית בין מניה לקריפטו (80% מניות, 20% קריפטו)
-            content_type = random.choices(['stock', 'crypto'], weights=[80, 20])[0]
-            
-            if content_type == 'stock':
-                selected = random.choice(premium_stocks)
-                symbol = selected['symbol']
-                stock_type = selected['type']
-                sector = selected['sector']
-                
-                data = self.twelve_api.get_stock_data(symbol)
-                
-                if data is None or data.empty:
-                    logger.warning(f"No Twelve Data for {symbol}")
-                    await self.send_text_analysis(symbol, stock_type)
-                    return
-                
-                await asyncio.sleep(1)
-                
-                current_price = data['Close'][-1]
-                change = data['Close'][-1] - data['Close'][-2] if len(data) > 1 else 0
-                change_percent = (change / data['Close'][-2] * 100) if len(data) > 1 and data['Close'][-2] != 0 else 0
-                volume = data['Volume'][-1] if len(data) > 0 else 0
-                
-                high_30d = data['High'].max()
-                low_30d = data['Low'].min()
-                avg_volume = data['Volume'].mean()
-                
-                entry_price = current_price * 1.02
-                stop_loss = current_price * 0.95
-                profit_target_1 = current_price * 1.08
-                profit_target_2 = current_price * 1.15
-                
-                risk = entry_price - stop_loss
-                reward = profit_target_1 - entry_price
-                risk_reward = reward / risk if risk > 0 else 0
-                
-                chart_buffer = self.create_professional_chart_with_prices(symbol, data, current_price, entry_price, stop_loss, profit_target_1, profit_target_2)
-                
-                caption = f"""🔥 {stock_type} - המלצת השקעה חמה!
-
-💎 סקטור: {sector} | מחיר נוכחי: ${current_price:.2f}
-
-📊 ניתוח טכני מקצועי (30 ימים):
-• טווח מחירים: ${low_30d:.2f} - ${high_30d:.2f}
-• נפח מסחר ממוצע: {avg_volume:,.0f}
-• נפח היום: {volume:,.0f}
-• מומנטום: {'חיובי 📈' if change_percent > 0 else 'שלילי 📉'} ({change_percent:+.2f}%)
-
-🎯 אסטרטגיית המסחר שלנו:
-🟢 נקודת כניסה: ${entry_price:.2f}
-🔴 סטופלוס מומלץ: ${stop_loss:.2f}
-🎯 יעד ראשון: ${profit_target_1:.2f}
-🚀 יעד שני: ${profit_target_2:.2f}
-
-💰 פוטנציאל רווח: ${reward:.2f} למניה
-💸 סיכון מקסימלי: ${risk:.2f} למניה
-
-🔥 זוהי המלצה בלעדית לחברי PeakTrade VIP!
-
-#PeakTradeVIP #{symbol} #HotStock"""
-                
-                if chart_buffer:
-                    await self.application.bot.send_photo(
-                        chat_id=CHANNEL_ID,
-                        photo=chart_buffer,
-                        caption=caption
-                    )
-                    logger.info(f"✅ Twelve Data stock content sent for {symbol}")
-                else:
-                    await self.application.bot.send_message(
-                        chat_id=CHANNEL_ID,
-                        text=caption
-                    )
-                    logger.info(f"✅ Twelve Data stock content (text) sent for {symbol}")
-            
-            else:  # קריפטו
-                selected = random.choice(premium_crypto)
-                symbol = selected['symbol']
-                crypto_name = selected['name']
-                crypto_type = selected['type']
-                
-                await self.send_crypto_analysis(symbol, crypto_name, crypto_type)
-            
-        except Exception as e:
-            logger.error(f"❌ Error sending Twelve Data stock content: {e}")
-
-    async def send_crypto_analysis(self, symbol, crypto_name, crypto_type):
-        """שליחת ניתוח קריפטו"""
-        try:
-            message = f"""🪙 {crypto_type} - אות קנייה בלעדי!
-
-💎 מטבע: {symbol.replace('/USD', '')} | מחיר נוכחי: מעודכן בזמן אמת
-
-📊 ניתוח קריפטו מקצועי:
-• מומנטום: מתחזק 🚀
-• נפח מסחר: גבוה
-• טרנד: חיובי לטווח הקצר
-
-🎯 אסטרטגיית הקריפטו שלנו:
-🟢 כניסה מומלצת: +3% מהמחיר הנוכחי
-🔴 סטופלוס חכם: -8% מהמחיר הנוכחי
-🎯 יעד ראשון: +12% רווח
-🚀 יעד שני: +25% רווח מקסימלי
-
-⚠️ קריפטו - סיכון גבוה, פוטנציאל רווח גבוה
-🔥 זוהי המלצה בלעדית לחברי VIP!
-
-#PeakTradeVIP #{crypto_name} #CryptoSignal"""
-            
-            await self.application.bot.send_message(
-                chat_id=CHANNEL_ID,
-                text=message
-            )
-            
-            logger.info(f"✅ Crypto analysis sent for {symbol}")
-            
-        except Exception as e:
-            logger.error(f"❌ Error sending crypto analysis: {e}")
-
-    async def send_text_analysis(self, symbol, asset_type):
-        """שליחת ניתוח טקסט אם הגרף נכשל"""
-        try:
-            message = f"""{asset_type} 📈 - המלצה חמה!
-
-💰 מחיר נוכחי: מעודכן בזמן אמת
-📊 ניתוח טכני מקצועי
-
-🎯 המלצות המסחר שלנו:
-🟢 כניסה מומלצת: +2% מהמחיר הנוכחי
-🔴 סטופלוס חכם: -5% מהמחיר הנוכחי
-🎯 יעד ראשון: +8% רווח יפה
-🚀 יעד שני: +15% רווח מקסימלי
-
-🔥 זוהי המלצה בלעדית לחברי VIP!
-
-#PeakTradeVIP #{symbol.replace('/USD', '').replace('.TA', '')} #HotStock"""
-            
-            await self.application.bot.send_message(
-                chat_id=CHANNEL_ID,
-                text=message
-            )
-            
-            logger.info(f"✅ Text analysis sent for {symbol}")
-            
-        except Exception as e:
-            logger.error(f"❌ Error sending text analysis: {e}")
-
-    async def run(self):
-        """הפעלת הבוט עם Twelve Data"""
-        logger.info("🚀 Starting PeakTrade VIP Bot with Twelve Data...")
-        
-        self.application = Application.builder().token(BOT_TOKEN).build()
-        self.setup_handlers()
-        
-        # הגדרת scheduler לבדיקת תפוגת ניסיונות
-        self.scheduler = AsyncIOScheduler(timezone="Asia/Jerusalem")
-        
-        self.scheduler.add_job(
-            self.check_trial_expiry,
-            CronTrigger(hour=9, minute=0),
-            id='check_trial_expiry'
-        )
-        
-        self.scheduler.start()
-        logger.info("✅ Trial expiry scheduler configured")
-        
-        try:
-            await self.application.initialize()
-            await self.application.start()
-            await self.application.updater.start_polling()
-            
-            logger.info("✅ PeakTrade VIP Bot is running successfully!")
-            logger.info("📊 Twelve Data API integrated - 800 calls/day")
-            logger.info("📊 Content: Every 30 minutes between 10:00-22:00")
-            logger.info("📊 Stock pool: 60+ stocks from all sectors")
-            logger.info("📊 Crypto pool: 10+ major cryptocurrencies")
-            logger.info("⏰ Trial expiry check: Daily at 9:00 AM")
-            logger.info(f"💰 Monthly subscription: {MONTHLY_PRICE}₪")
-            
-            # שליחת הודעת בדיקה מיידית
-            await asyncio.sleep(10)
-            try:
-                await self.send_guaranteed_stock_content()
-                logger.info("✅ Immediate Twelve Data test sent")
-            except Exception as e:
-                logger.error(f"❌ Test error: {e}")
-            
-            # לולאה עם שליחה מאולצת כל 30 דקות
-            last_send_time = datetime.now()
-            
-            while True:
-                current_time = datetime.now()
-                
-                if (current_time - last_send_time).total_seconds() >= 1800:  # 30 דקות
-                    if 10 <= current_time.hour < 22:
-                        try:
-                            logger.info(f"🕐 Forcing Twelve Data content at {current_time.strftime('%H:%M')}")
-                            await self.send_guaranteed_stock_content()
-                            last_send_time = current_time
-                            logger.info("✅ Forced Twelve Data content sent successfully!")
-                        except Exception as e:
-                            logger.error(f"❌ Error in forced Twelve Data send: {e}")
-                
-                await asyncio.sleep(60)
-                
-        except Exception as e:
-            logger.error(f"❌ Bot error: {e}")
-        finally:
-            if self.scheduler:
-                self.scheduler.shutdown()
-            if self.application:
-                await self.application.updater.stop()
-                await self.application.stop()
-                await self.application.shutdown()
-
-if __name__ == "__main__":
-    bot = PeakTradeBot()
-    try:
-        asyncio.run(bot.run())
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
-    except Exception as e:
-        logger.error(f"Fatal error: {e}")
