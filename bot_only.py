@@ -226,62 +226,112 @@ class PeakTradeBot:
             return None
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """פקודת התחלה - ישירות קישור והוספה לגיליון"""
+        """פקודת התחלה עם disclaimer"""
         user = update.effective_user
         logger.info(f"User {user.id} ({user.username}) started PeakTrade bot")
+        
+        disclaimer_message = f"""היי, זה מצוות הערוץ ״PeakTrade VIP״ 
 
-        # רישום המשתמש ל-Google Sheet
+המנוי שלך מתחיל היום {datetime.now().strftime('%d.%m')} ויסתיים ב{(datetime.now() + timedelta(days=7)).strftime('%d.%m')}
+
+חשוב להבהיר:
+🚫התוכן כאן אינו מהווה ייעוץ או המלצה פיננסית מכל סוג!
+📌 ההחלטות בסופו של דבר בידיים שלכם – איך לפעול, מתי להיכנס ומתי לצאת מהשוק.
+
+אנא אשר שקראת והבנת את כל הפרטים."""
+        
+        await update.message.reply_text(disclaimer_message)
+        return WAITING_FOR_EMAIL
+
+    async def log_disclaimer_sent(self, user):
+        """רישום שליחת disclaimer ב-Google Sheets"""
         try:
-            if self.sheet:
-                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                trial_end = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
-
-                new_row = [
-                    user.id,
-                    user.username or "N/A",
-                    user.first_name or "",
-                    current_time,
-                    "confirmed",
-                    current_time,
-                    trial_end,
-                    "trial_active",
-                    "",
-                    "",
-                    current_time
-                ]
-                self.sheet.append_row(new_row)
-                logger.info(f"✅ User {user.id} registered in sheet")
+            if not self.sheet:
+                return
+                
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            trial_end = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+            
+            new_row = [
+                user.id,
+                user.username or "N/A",
+                "",
+                current_time,
+                "confirmed",
+                current_time,
+                trial_end,
+                "trial_active",
+                "",
+                "",
+                current_time
+            ]
+            self.sheet.append_row(new_row)
+            logger.info(f"✅ User {user.id} registered for trial")
+            
         except Exception as e:
-            logger.error(f"❌ Error writing user to sheet: {e}")
+            logger.error(f"❌ Error logging disclaimer: {e}")
 
-        # יצירת קישור לקבוצה
+    async def handle_email_confirmation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """טיפול באישור - רק המילה מאשר"""
+        user = update.effective_user
+        message_text = update.message.text.strip()
+        
+        if message_text.lower() != "מאשר":
+            await update.message.reply_text(
+                "❌ אנא שלח את המילה: מאשר"
+            )
+            return WAITING_FOR_EMAIL
+        
+        processing_msg = await update.message.reply_text(
+            "⏳ מכין עבורך את הקישור לערוץ הפרמיום..."
+        )
+        
         try:
+            await self.log_disclaimer_sent(user)
+            
             invite_link = await context.bot.create_chat_invite_link(
                 chat_id=CHANNEL_ID,
                 member_limit=1,
                 expire_date=int((datetime.now() + timedelta(days=8)).timestamp()),
                 name=f"Trial_{user.id}_{user.username or 'user'}"
             )
-
-            message = f"""🎉 ברוך הבא ל-PeakTrade VIP!
+            
+            success_message = f"""🎉 ברוך הבא ל-PeakTrade VIP!
 
 👤 שם משתמש: @{user.username or 'לא זמין'}
 
-🔗 הקישור שלך לקבוצה:
+🔗 הקישור שלך לערוץ הפרמיום:
 {invite_link.invite_link}
 
-⏰ תקופת ניסיון: 7 ימים
-📅 מתחיל: {datetime.now().strftime('%d/%m/%Y')}
-📅 מסתיים: {(datetime.now() + timedelta(days=7)).strftime('%d/%m/%Y')}
+⏰ תקופת הניסיון שלך: 7 ימים מלאים
+📅 מתחיל היום: {datetime.now().strftime("%d/%m/%Y")}
+📅 מסתיים: {(datetime.now() + timedelta(days=7)).strftime("%d/%m/%Y")}
 
-בהצלחה! 🚀"""
-            await update.message.reply_text(message)
+🎯 מה מחכה לך בערוץ:
+• המלצות מניות חמות כל 30 דקות
+• גרפים מקצועיים עם נקודות כניסה ויציאה
+• ניתוחים טכניים מתקדמים
+• קהילת משקיעים פעילה
 
+לחץ על הקישור והצטרף עכשיו! 🚀
+
+בהצלחה במסחר! 💪"""
+            
+            await processing_msg.edit_text(
+                success_message,
+                disable_web_page_preview=True
+            )
+            
+            logger.info(f"✅ Trial registration successful for user {user.id}")
+            return ConversationHandler.END
+            
         except Exception as e:
-            logger.error(f"❌ Error creating invite link: {e}")
-            await update.message.reply_text("❌ לא הצלחנו להפיק קישור. אנא נסה שוב מאוחר יותר.")
+            logger.error(f"❌ Error in trial registration: {e}")
+            await processing_msg.edit_text(
+                "❌ אופס! משהו השתבש ברישום\n\nאנא נסה שוב או פנה לתמיכה."
+            )
+            return ConversationHandler.END
 
-        return ConversationHandler.END
     async def send_trial_expiry_reminder(self, user_id):
         """שליחת תזכורת תשלום יום לפני סיום תקופת הניסיון"""
         try:
