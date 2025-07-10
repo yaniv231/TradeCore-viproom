@@ -251,7 +251,6 @@ class PeakTradeBot:
                 ]
                 self.sheet.append_row(new_row)
                 logger.info(f"✅ User {user.id} registered in sheet")
-
         except Exception as e:
             logger.error(f"❌ Error writing user to sheet: {e}")
 
@@ -283,14 +282,6 @@ class PeakTradeBot:
             await update.message.reply_text("❌ לא הצלחנו להפיק קישור. אנא נסה שוב מאוחר יותר.")
 
         return ConversationHandler.END
-            
-        except Exception as e:
-            logger.error(f"❌ Error in trial registration: {e}")
-            await processing_msg.edit_text(
-                "❌ אופס! משהו השתבש ברישום\n\nאנא נסה שוב או פנה לתמיכה."
-            )
-            return ConversationHandler.END
-
     async def send_trial_expiry_reminder(self, user_id):
         """שליחת תזכורת תשלום יום לפני סיום תקופת הניסיון"""
         try:
